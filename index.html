@@ -1,7 +1,7 @@
 <html lang="vi"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Weapon Naming Tool v7 — VI · AR · KO</title>
+<title>Weapon Naming Tool v8 — VI · AR · KO</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 :root{
@@ -183,8 +183,8 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
 <div class="page">
 
 <header>
-  <h1>Weapon Naming Tool <span style="color:var(--text3);font-weight:400;font-size:13px;">v7 Pro</span></h1>
-  <small>Kiến trúc: Typo Fix → Global Glossary → Lang Glossary → Lang Prompt → LLM → Post-Process → QA</small>
+  <h1>Weapon Naming Tool <span style="color:var(--text3);font-weight:400;font-size:13px;">v8 Pro</span></h1>
+  <small>Kiến trúc: Typo Fix → Token Protect → Global Glossary → Lang Glossary → Lang Prompt → LLM → Restore Tokens → Post-Process → QA</small>
 </header>
 
 <!-- LANG SELECTOR -->
@@ -198,6 +198,7 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
       <button class="lang-tab active" onclick="setLang('vi')">🇻🇳 Tiếng Việt</button>
       <button class="lang-tab" onclick="setLang('ar')">🇸🇦 Ả Rập</button>
       <button class="lang-tab" onclick="setLang('ko')">🇰🇷 Hàn Quốc</button>
+      <button class="lang-tab" onclick="setLang('tr')">🇹🇷 Thổ Nhĩ Kỳ</button>
     </div>
     <div id="lang-status" style="font-size:11px;color:var(--s-tx);">✓ Đã load: prompt Vietnamese · 50 glossary terms · post-process rules</div>
   </div>
@@ -232,7 +233,7 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
 </div>
 
 <!-- PIPELINE STATUS -->
-<div class="card" style="display:none;">
+<div class="card">
   <div class="pipeline">
     <span class="pipe-step" id="ps-typo">① Typo Fix</span>
     <span class="pipe-arr">→</span>
@@ -249,39 +250,27 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
     <span class="pipe-step done" id="ps-qa">⑦ QA</span>
   </div>
   <div class="head click" onclick="toggleSec('pipeline')">
-    <div class="ht"><span class="chev" id="pipeline-chev">▶</span>Xem chi tiết pipeline cho <span id="pipe-lang-label" style="color:var(--i-tx);margin-left:4px;">🇻🇳 Vietnamese</span></div>
+    <div class="ht"><span class="chev o" id="pipeline-chev">▶</span>System Prompt — <span id="pipe-lang-label" style="color:var(--i-tx);margin-left:4px;">🇻🇳 Vietnamese</span></div>
+    <span id="prompt-custom-badge" style="display:none;" class="tag t-ca">✦ Prompt tùy chỉnh</span>
   </div>
-  <div class="coll" id="pipeline-panel">
+  <div class="coll o" id="pipeline-panel">
     <div class="body" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-      <!-- Prompt -->
-      <div>
-        <div class="lbl" style="margin-bottom:6px;">④ System Prompt (tự động load)</div>
-        <div class="prompt-box" id="prompt-preview">Translate and rewrite each English weapon name into wuxia-style Vietnamese.
-
-RULES:
-- Use Sino-Vietnamese (Hán Việt) vocabulary — NOT modern Vietnamese
-- Maximum 4–5 syllables per name
-- Structure: [Thuộc tính] + [Yếu tố] + [Loại vũ khí]
-- NEVER use "của" — use compound form instead
-- NEVER translate literally — compress into powerful short names
-- Weapon type MUST match the glossary exactly
-
-WEAPON TYPE LOCK (không được thay đổi):
-Sword → Kiếm | Blade → Đao | Spear → Thương | Lance → Thương
-Pike → Mâu | Glaive → Kích | Halberd → Kích | Polearm → Trường Khí
-Bow → Cung | Crescent → Nha Nguyệt Đao
-
-EXAMPLES (follow this style):
-Evil Flame Spear → Ma Diệm Thương
-Bloody Sharp Sword → Huyết Nhận Kiếm
-Dragon Blade → Long Đao
-Hellfire Devil Sword → Địa Hỏa Ma Kiếm
-Snake Frost Sword → Xà Băng Kiếm
-Imperial Divine Sword → Đế Thần Kiếm
-Reaper Soul Spear → Tử Thần Linh Thương
-Python's Frozen Blade → Mãng Xà Băng Đao
-
-Return ONLY a JSON array, same length as input. No explanation.</div>
+      <!-- Prompt Editor -->
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div class="lbl">④ System Prompt — có thể chỉnh trực tiếp</div>
+          <div style="display:flex;gap:4px;align-items:center;">
+            <div style="display:flex;border:.5px solid var(--border2);border-radius:var(--r);overflow:hidden;">
+              <button class="btn btn-sm prompt-type-btn" id="ptb-weapon"   onclick="switchPromptType('weapon')"   style="border-radius:0;border:none;border-right:.5px solid var(--border2);" title="Tên vũ khí, item, trang bị">⚔ Vũ Khí</button>
+              <button class="btn btn-sm prompt-type-btn" id="ptb-dialogue" onclick="switchPromptType('dialogue')" style="border-radius:0;border:none;border-right:.5px solid var(--border2);" title="Lời thoại NPC, câu chuyện">💬 Hội Thoại</button>
+              <button class="btn btn-sm prompt-type-btn" id="ptb-system"   onclick="switchPromptType('system')"   style="border-radius:0;border:none;border-right:.5px solid var(--border2);" title="Thông báo UI, hệ thống game">🖥 Hệ Thống</button>
+              <button class="btn btn-sm prompt-type-btn" id="ptb-multi"    onclick="switchPromptType('multi')"    style="border-radius:0;border:none;" title="Hội thoại nhiều đoạn cách nhau bằng |">📋 Đa Đoạn</button>
+            </div>
+            <button class="btn btn-sm" onclick="resetPrompt()" title="Reset về prompt mặc định" style="color:var(--text3);">↺ Reset</button>
+          </div>
+        </div>
+        <textarea class="prompt-box" id="prompt-preview" style="height:240px;resize:vertical;line-height:1.55;font-size:11px;" oninput="saveCustomPrompt()" spellcheck="false"></textarea>
+        <div style="font-size:10px;color:var(--text3);">Chỉnh prompt → bấm <strong>Dịch</strong> — toàn bộ batch (kể cả 40k dòng) sẽ dùng prompt này. Glossary &amp; Token Protection vẫn inject tự động sau.</div>
       </div>
       <!-- Post-process rules -->
       <div>
@@ -310,8 +299,21 @@ Return ONLY a JSON array, same length as input. No explanation.</div>
           <div class="sc-t">BATCH TOKEN BUDGET</div>
           <select id="batch-tokens" style="width:100%;font-size:12px;padding:4px 8px;" onchange="onBatchChange()">
             <option value="1500">1 500 — an toàn</option>
-            <option value="2500" selected="">2 500 — cân bằng</option>
-            <option value="4000">4 000 — nhanh</option>
+            <option value="2500">2 500 — cân bằng</option>
+            <option value="4000">4 000 — mặc định</option>
+            <option value="6000">6 000 — câu dài</option>
+            <option value="8000">8 000</option>
+            <option value="12000">12 000</option>
+            <option value="16000" selected="">16 000 — tối đa</option>
+          </select>
+        </div>
+        <div class="sc">
+          <div class="sc-t">PHONG CÁCH (áp cố định toàn bộ)</div>
+          <select id="style-lock" style="width:100%;font-size:12px;padding:4px 8px;">
+            <option value="auto">Auto — tự phát hiện</option>
+            <option value="casual">Hiện đại (VI: tôi/bạn · KO: 너/나 · AR: أنت/أنا · TR: sen/ben)</option>
+            <option value="normal">Cổ phong (VI: ta/ngươi · KO: 당신/저 · AR: أنت/أنا · TR: sen/ben)</option>
+            <option value="formal">Trang trọng (VI: ta/ngài · KO: 각하/본인 · AR: سيادتك · TR: siz/efendi)</option>
           </select>
         </div>
         <div class="sc">
@@ -610,7 +612,7 @@ Return ONLY a JSON array, same length as input. No explanation.</div>
 <div class="card" id="tblcard" style="display: block;">
   <div class="head">
     <div class="ht">Kết quả</div>
-    <div style="font-size:10px;color:var(--text3);">Type: WPN/DLG/SYS/MLT · PP chỉ áp WPN · QA: 📏=dài · ♊=trùng · ⚠%s=mất placeholder · ⚠|=lỗi multi · ⚠short=bị cắt · ⚠pronoun=sai đại từ VI</div>
+    <div style="font-size:10px;color:var(--text3);">Loại: ⚔ Vũ Khí / 💬 Hội Thoại / 🖥 Hệ Thống / 📋 Đa Đoạn · PP chỉ áp Vũ Khí · QA: 📏=dài · ♊=trùng · ⚠%s=mất placeholder · ⚠tag=mất tag · ⚠|=lỗi đa đoạn · ⚠short=bị cắt · ⚠ngươi=sai đại từ VI</div>
   </div>
   <div class="tbl-wrap">
     <table class="tbl">
@@ -798,6 +800,73 @@ Return ONLY a JSON array, same length as input. No explanation.</div>
 <script>
 'use strict';
 /* ══════════════════════════════════════════
+   TOKEN PROTECTION — ONE-PASS
+   Model KHÔNG BAO GIỜ thấy: <color=...> </color> <enter> {…} %s
+   Flow: protectAll → LLM → restoreAll
+══════════════════════════════════════════ */
+const TOKEN_REGEX = /<color=[^>]+>|<\/color>|<enter>|\{[^}]+\}|%[sdif]/gi;
+
+function protectAll(text) {
+  const map = [];
+  let i = 0;
+  const protected_ = text.replace(TOKEN_REGEX, (m) => {
+    const key = `⟨T${i++}⟩`;
+    map.push({ key, value: m });
+    return key;
+  });
+  return { text: protected_, map };
+}
+
+function restoreAll(text, map) {
+  if (!map || !map.length) return text;
+  const dict = Object.fromEntries(map.map(x => [x.key, x.value]));
+  let r = text.replace(/⟨T\d+⟩/g, m => dict[m] !== undefined ? dict[m] : m);
+  // Clean reconstruction artifacts: LLM occasionally corrupts ⟨T5⟩ → ⟩ (drops ⟨T5)
+  r = r.replace(/⟨T\d*/g, ''); // partial open tokens still in string
+  r = r.replace(/⟩/g, '');      // orphaned close delimiters
+  return r;
+}
+
+// Detect structural tag corruption after restore
+// Returns {ok, missing, extra} for <color=> tag count mismatch
+function detectTagCorruption(enOrig, restored) {
+  const cntColor = s => (s.match(/<color=[^>]+>/g) || []).length;
+  const cntClose = s => (s.match(/<\/color>/g) || []).length;
+  const origOpen = cntColor(enOrig), outOpen = cntColor(restored);
+  const origClose = cntClose(enOrig), outClose = cntClose(restored);
+  return {
+    ok: origOpen === outOpen && origClose === outClose,
+    missingOpen: origOpen - outOpen,
+    missingClose: origClose - outClose,
+  };
+}
+
+function qaTokenIntegrity(original, restored) {
+  const count = (str, re) => (str.match(re) || []).length;
+  const origTokens = count(original, TOKEN_REGEX);
+  TOKEN_REGEX.lastIndex = 0;
+  const restTokens = count(restored, TOKEN_REGEX);
+  TOKEN_REGEX.lastIndex = 0;
+  const countOk = origTokens === restTokens;
+  // Detect empty token pairs: ⟨T4⟩⟨T5⟩ or ⟨T4⟩ ⟨T5⟩ — content was eaten
+  const emptyPairs = (restored.match(/⟨T\d+⟩\s*⟨T\d+⟩/g) || []).length;
+  return { ok: countOk && emptyPairs === 0, diff: origTokens - restTokens, emptyPairs };
+}
+
+/* Đếm tag để quyết định split strategy */
+function countTags(text) {
+  const n = (text.match(TOKEN_REGEX) || []).length;
+  TOKEN_REGEX.lastIndex = 0;
+  return n;
+}
+
+/* Split theo <enter> cho string dài nhiều tag */
+function splitByEnter(text) {
+  return text.split(/<enter>/i).map(s => s.trim()).filter(Boolean);
+}
+function joinWithEnter(parts) { return parts.join('<enter>'); }
+
+/* ══════════════════════════════════════════
    GLOBAL STATE
 ══════════════════════════════════════════ */
 let rows=[],customGlossByLang={vi:[],ar:[],ko:[]},cache=new Map(),wb=null,wsName=null,headers=[],colIdx=0,currentFilename='';
@@ -820,7 +889,7 @@ const KNOWN_TYPOS={
   'Pyhon':'Python','Frozne':'Frozen','Strom':'Storm',
   'Halbert':'Halberd','Onix':'Onyx','Probound':'Profound',
   'Glanve':'Glaive','Sorwd':'Sword','Speear':'Spear',
-  'Iranggjinun':'Iranggjingun','Frozne':'Frozen',
+  'Iranggjinun':'Iranggjingun',
 };
 
 /* ══════════════════════════════════════════
@@ -887,18 +956,18 @@ Return ONLY a JSON array, same length as input. No explanation.`,
 - Keep full meaning — do NOT shorten or summarize
 - Slightly cổ phong but easy to understand
 - Avoid machine-translation tone
-- PRONOUNS (context-based, never hardcode):
-  · "you" → bạn (neutral/default) | ngài (respectful/noble) | các hạ (formal peer) | ngươi (chỉ khi rõ ràng là kiếm hiệp/cổ trang)
-  · "I/me" → ta (authority) | tại hạ (humble) | bổn tọa (elder)
+- PRONOUNS: Follow the PRONOUN RULE injected at the end of this prompt EXACTLY — it overrides all other pronoun guidance
+  · "we/us/our" → chúng ta (ALWAYS — never "ta" alone for "we")
   · "sir/lord/ambassador" → ngài | đại nhân
-  · Detect tone: respectful→ngài; casual→ngươi; humble→tại hạ
-  · NEVER use "bạn" or "tôi" in wuxia context
 - Preserve placeholders (%s %d {0}) exactly as-is
 - Keep pipe separator | between parts if present
-Examples:
-  Hello, where do you want to go? → Xin chào, ngươi muốn đến đâu?
-  Hello sir, can you give me advice? → Thưa ngài, ngài có thể chỉ điểm cho tại hạ không?
-  Hello Ambassador Masha, I will take you to the wharf. → Xin chào Đại Sứ Masha, ta sẽ đưa ngài đến bến thuyền.
+Examples (WITHOUT token protection, for reference only):
+  Hello, where do you want to go? → Xin chào, bạn muốn đến đâu?
+  Hello sir, can you give me advice? → Thưa ngài, ngài có thể chỉ điểm cho tôi không?
+  We always study the worst case first. → Chúng ta luôn xét đến tình huống xấu nhất trước tiên.
+TOKEN PAIR example (CRITICAL — do NOT swap content between pairs):
+  ⟨T0⟩Common⟨T1⟩ ⟨T2⟩Sword⟨T3⟩ → ⟨T0⟩Phổ Thông⟨T1⟩ ⟨T2⟩Kiếm⟨T3⟩  (each word stays in its own pair)
+  ⟨T4⟩1st⟨T5⟩ ⟨T6⟩Trial⟨T7⟩ → ⟨T4⟩Thứ 1⟨T5⟩ ⟨T6⟩Thử Thách⟨T7⟩  (translate in-place, no swap)
 Return ONLY a JSON array, same length as input. No explanation.`,
 
       system:
@@ -913,7 +982,7 @@ Return ONLY a JSON array, same length as input. No explanation.`,
 `Translate each dialogue segment into natural wuxia-flavored Vietnamese.
 Each item may contain multiple sentences separated by |
 - Translate each part naturally, keep the | separator
-- Apply same pronoun rules as dialogue
+- PRONOUNS: Follow the PRONOUN RULE at end of prompt. we/us/our → chúng ta (ALWAYS)
 - Keep placeholders exactly
 Return ONLY a JSON array, same length as input. No explanation.`,
     },
@@ -937,8 +1006,9 @@ Return ONLY a JSON array, same length as input. No explanation.`,
       'Storm':'Phong Bão','Blaze':'Liệt Hỏa',
     },
     postProcess:(s)=>{
-      // Remove "của"
-      s=s.replace(/\s+của\s+/gi,' ');
+      // Xóa "của" chỉ khi từ sau là danh từ Hán-Việt (không phải đại từ/sở hữu)
+      // Giữ: "của bạn/ngài/ngươi/tôi/ta/anh/chị/họ/mình/chúng"
+      s=s.replace(/\s+của\s+(?!(bạn|ngài|ngươi|tôi|ta|anh|chị|họ|mình|chúng|em|hắn|nó)\b)/gi,' ');
       // Fix common direct translations
       const fixes=[
         [/Giáo\b/g,'Thương'],[/\bCọc\b/g,'Mâu'],
@@ -1136,7 +1206,145 @@ Return ONLY a JSON array, same length as input. No explanation.`,
       return flags;
     },
   },
+
+  tr: {
+    name:'Turkish', viName:'Thổ Nhĩ Kỳ', flag:'🇹🇷',
+    rtl:false, font:'sans', tokRatio:0.85,
+    get systemPrompt(){return this.prompts.weapon;},
+    prompts:{
+      weapon:
+`Translate each English weapon/item name into Ottoman-style Turkish for a fantasy MMO.
+- Use Turkic/Ottoman compound nouns — short and powerful
+- Max 3–4 words. Structure: [Özellik]+[Unsur]+[Silah türü]
+- Weapon LOCK: Sword→Kılıç|Blade→Pala|Spear→Mızrak|Lance→Süngü|Pike→Harbe|Glaive→Glaiv|Halberd→Helebard|Polearm→Sırık|Bow→Yay|Crescent→Hilal Pala
+- Turkish possessive: Ateş+Kılıç=Ateş Kılıcı | Kan+Mızrak=Kan Mızrağı (add possessive suffix to weapon)
+- TERMINOLOGY TREE: Same root → same prefix across ALL items. Spirit=Ruh (ALWAYS — NEVER Tin). Ruh Taşı/Ruh Kristali/Ruh Cevheri/Ruh Mücevheri MUST share Ruh root.
+Examples: Evil Flame Spear→Şeytan Alev Mızrağı | Dragon Blade→Ejder Palası | Spirit Sword→Ruh Kılıcı | Spirit Stone→Ruh Taşı | Spirit Crystal→Ruh Kristali
+Return ONLY a JSON array, same length as input. No explanation.`,
+
+      dialogue:
+`Translate each NPC dialogue line into natural Turkish for a fantasy MMO.
+- Keep full meaning, natural and immersive
+- Slightly archaic but easy to understand — Ottoman flavor without being incomprehensible
+- PRONOUNS: Follow the PRONOUN RULE injected at the end of this prompt EXACTLY — it overrides all other pronoun guidance
+  · "we/us/our" → biz/bizim (ALWAYS — never sen/ben for plural)
+  · "sir/lord/ambassador" → efendi | bey | hazretleri
+- Preserve placeholders (%s %d {0}) exactly
+- Keep pipe separator | between parts if present
+Examples:
+  Hello, where do you want to go? → Merhaba, nereye gitmek istiyorsun?
+  Hello sir, can you give me advice? → Buyurun efendi, bana tavsiye verir misiniz?
+  We always study the worst case first. → Biz her zaman önce en kötü durumu inceleriz.
+Return ONLY a JSON array, same length as input. No explanation.`,
+
+      system:
+`Translate each UI/system message into clear Modern Turkish.
+- Clear and concise
+- Keep placeholders EXACTLY: %s %d {0} {1}
+- No stylistic rewriting
+Return ONLY a JSON array, same length as input. No explanation.`,
+
+      multi:
+`Translate each dialogue segment (may contain | separators) into natural Turkish.
+- Translate each part, keep | separator
+- Apply same pronoun/speech level rules as dialogue
+- Keep placeholders exactly
+Return ONLY a JSON array, same length as input. No explanation.`,
+    },
+    glossary:{
+      'Fire':'Ateş','Flame':'Alev','Hellfire':'Cehennem Ateşi',
+      'Frost':'Buz','Frozen':'Donmuş','Blizzard':'Kar Fırtınası','Freezing':'Dondurucu',
+      'Blood':'Kan','Bloody':'Kanlı',
+      'Dragon':'Ejder','Snake':'Yılan','Python':'Ejder Yılanı','Phoenix':'Anka',
+      'Girin':'Kilin','Satan':'Şeytan',
+      // Spirit-family terminology tree — MUST stay consistent
+      'Spirit Stone':'Ruh Taşı','Spirit Crystal':'Ruh Kristali',
+      'Spirit Ore':'Ruh Cevheri','Spirit Gem':'Ruh Mücevheri',
+      'Spirit':'Ruh',
+      'Soul Stone':'Ruh Taşı','Soul':'Ruh','Ghost':'Hayalet',
+      'Evil':'Lanetli','Dark':'Karanlık','Holy':'Kutsal','Divine':'İlahi',
+      'Imperial':'İmparatorluk','Lord':'Bey','Master':'Usta',
+      'General':'Komutan','Reaper':'Ölüm Meleği','Demon':'İblis',
+      'Sword':'Kılıç','Blade':'Pala','Spear':'Mızrak','Lance':'Süngü',
+      'Pike':'Harbe','Glaive':'Glaiv','Halberd':'Helebard','Polearm':'Sırık',
+      'Bow':'Yay','Crescent':'Hilal Pala',
+      'Gold':'Altın','Silver':'Gümüş','Iron':'Demir',
+      'Copper':'Bakır','Bronze':'Tunç','Jade':'Yeşim Taşı',
+      'Moon':'Ay','Heaven':'Gök','Lightning':'Yıldırım','Poison':'Zehir',
+      'Storm':'Fırtına','Break':'Kırıcı',
+      // Gameplay / progression terms
+      'Trial':'Sınav','Challenge':'Meydan Okuma','Test':'Deneme',
+      'Reward':'Ödül','Artifact':'Artefakt','Relic':'Kalıntı',
+      'Essence':'Öz','Crystal':'Kristal','Ore':'Cevher','Gem':'Mücevher',
+      'Cultivation':'Yetişme','Realm':'Âlem','Sect':'Tarikat','Clan':'Kabile',
+      'Guild':'Lonca','Sage':'Bilge','Elder':'Yaşlı Üstad','Warrior':'Savaşçı',
+    },
+    postProcess:(s)=>{
+      // Turkish suffix harmony cleanup — basic trim only, morphology handled by LLM
+      s=s.replace(/\s{2,}/g,' ');
+      return s.trim();
+    },
+    postRules:[
+      'Türkçe iyelik eki uyumu (Kılıcı, Mızrağı)',
+      'Max 4 kelime (uyarı)',
+      'Osmanlı bileşik isimleri',
+    ],
+    qaCheck:(s)=>{
+      const flags=[];
+      if(s.split(/\s+/).length>5)flags.push('📏');
+      return flags;
+    },
+  },
+
 };
+
+/* ══════════════════════════════════════════
+   TURKISH STYLE DETECTION & NORMALIZER
+══════════════════════════════════════════ */
+function detectStyleTR(enText){
+  if(/\b(sir|madam|ma'am|ambassador|lord|lady|excellency|highness|chancellor|your\s+honor|sire)\b/i.test(enText)) return'formal';
+  return'normal';
+}
+
+const TR_PROTECT_MAP=[
+  ['sizin için', '〈TR_FORYOU〉'],
+  ['sizinle',    '〈TR_WITHYOU〉'],
+  ['sizden',     '〈TR_FROMYOU〉'],
+  ['sizi',       '〈TR_YOUACC〉'],
+  ['size',       '〈TR_TOYOU〉'],
+  ['sizin',      '〈TR_YOUR〉'],
+];
+
+function turkishPronounNormalize(text, enOrig){
+  const style=(_globalStyleLock==='formal')?'formal'
+            :(_globalStyleLock==='casual')?'casual'
+            :(_globalStyleLock==='normal')?'normal'
+            :detectStyleTR(enOrig||'');
+  // 1. PROTECT siz- particle combos
+  TR_PROTECT_MAP.forEach(([p,tk])=>{ text=text.split(p).join(tk); });
+  // 2. NORMALIZE
+  if(style==='casual'){
+    // sen/ben — casual 반말 equivalent
+    text=text.split('hazretleri').join('sen');
+    text=text.split('efendim').join('');
+    text=text.split('bendeniz').join('ben');
+    // formal siz → casual sen (bare word only)
+    text=text.replace(/\bSiz\b/g,'Sen');
+    text=text.replace(/\bsiz\b/g,'sen');
+  } else if(style==='normal'){
+    // sen/ben — default for most NPCs
+    text=text.split('hazretleri').join('siz');
+    text=text.split('bendeniz').join('ben');
+  } else {
+    // formal: siz/ben
+    text=text.replace(/\bsen\b/g,'siz');
+    text=text.replace(/\bSen\b/g,'Siz');
+    text=text.split('bendeniz').join('ben');
+  }
+  // 3. RESTORE
+  TR_PROTECT_MAP.forEach(([p,tk])=>{ text=text.split(tk).join(p); });
+  return text;
+}
 
 /* ══════════════════════════════════════════
    MODEL PRICING
@@ -1160,7 +1368,7 @@ function setLang(key){
   const prof=LANG_PROFILES[key];
   // Update tabs
   document.querySelectorAll('.lang-tab').forEach((t,i)=>{
-    const keys=['vi','ar','ko'];
+    const keys=['vi','ar','ko','tr'];
     t.classList.toggle('active',keys[i]===key);
   });
   // Update labels
@@ -1186,8 +1394,8 @@ function setLang(key){
 function renderPipelinePreview(){
   const prof=LANG_PROFILES[currentLang];
   document.getElementById('pipe-lang-label').textContent=prof.flag+' '+prof.name;
-  // Prompt
-  document.getElementById('prompt-preview').textContent=prof.systemPrompt;
+  // Refresh prompt textarea với type hiện tại (giữ edits của user nếu có)
+  switchPromptType(currentPromptType||'weapon');
   // Post-process rules
   document.getElementById('pp-rules-preview').innerHTML=prof.postRules.map(r=>
     `<div class="pp-rule"><span class="pp-icon">→</span><span>${esc(r)}</span></div>`).join('');
@@ -1217,6 +1425,63 @@ function toggleSec(id){
 }
 function onCacheChange(){document.getElementById('cache-badge').style.display=document.getElementById('use-cache').checked?'inline-block':'none';}
 function onPpChange(){document.getElementById('pp-badge').style.display=document.getElementById('use-pp').checked?'inline-block':'none';}
+
+/* ══════════════════════════════════════════
+   CUSTOM PROMPT EDITOR
+   customPrompts[lang.type] → override LANG_PROFILES prompt
+   Glossary + Token rules vẫn được inject sau bởi mkPrompt()
+══════════════════════════════════════════ */
+let customPrompts={};
+let _globalStyleLock=null; // set once at translateAll start, reset on clearFile         // { 'vi.weapon': '...edited...', ... }
+let currentPromptType='weapon'; // tab đang active
+
+function getPrompt(lang,type){
+  const key=lang+'.'+type;
+  if(customPrompts[key]!==undefined) return customPrompts[key];
+  return LANG_PROFILES[lang].prompts[type]||LANG_PROFILES[lang].prompts.dialogue;
+}
+
+function switchPromptType(type){
+  currentPromptType=type;
+  // Active tab styling
+  ['weapon','dialogue','system','multi'].forEach(t=>{
+    const btn=document.getElementById('ptb-'+t);
+    if(!btn)return;
+    if(t===type){btn.style.background='var(--text)';btn.style.color='var(--bg)';}
+    else{btn.style.background='';btn.style.color='';}
+  });
+  // Load prompt vào textarea
+  const ta=document.getElementById('prompt-preview');
+  if(ta) ta.value=getPrompt(currentLang,type);
+  updatePromptBadge();
+}
+
+function saveCustomPrompt(){
+  const ta=document.getElementById('prompt-preview');
+  if(!ta)return;
+  const val=ta.value;
+  const key=currentLang+'.'+currentPromptType;
+  const def=LANG_PROFILES[currentLang].prompts[currentPromptType]||LANG_PROFILES[currentLang].prompts.dialogue;
+  // Nếu user chỉnh giống default → xóa custom
+  if(val.trim()===(def||'').trim()) delete customPrompts[key];
+  else customPrompts[key]=val;
+  updatePromptBadge();
+}
+
+function resetPrompt(){
+  const key=currentLang+'.'+currentPromptType;
+  delete customPrompts[key];
+  const ta=document.getElementById('prompt-preview');
+  if(ta) ta.value=LANG_PROFILES[currentLang].prompts[currentPromptType]||LANG_PROFILES[currentLang].prompts.dialogue;
+  updatePromptBadge();
+}
+
+function updatePromptBadge(){
+  // Badge trên header: hiện nếu CÓ BẤT KỲ custom prompt nào đang active cho lang hiện tại
+  const hasAny=['weapon','dialogue','system','multi'].some(t=>customPrompts[currentLang+'.'+t]!==undefined);
+  const badge=document.getElementById('prompt-custom-badge');
+  if(badge) badge.style.display=hasAny?'inline-block':'none';
+}
 function onDualChange(){
   const on=document.getElementById('dual-model').checked;
   document.getElementById('dual-sel').style.display=on?'block':'none';
@@ -1242,7 +1507,7 @@ function detectType(text){
   if(/%[sdif]|\{\d+\}/.test(t)&&/[.!?,]/.test(t))return'system';
   // Weapon: ngắn, không dấu câu, không pronoun
   const words=t.split(/\s+/).filter(Boolean).length;
-  if(words<=5&&!/[.!?,]/.test(t)&&!/\b(I|you|he|she|we|they)\b/i.test(t))return'weapon';
+  if(words<=5&&!/[.!?,]/.test(t)&&!/\b(I|you|your|he|his|she|her|we|our|they|their|my|me)\b/i.test(t))return'weapon';
   return'dialogue';
 }
 
@@ -1472,7 +1737,8 @@ function importGloss(ev){
 
 // Style mapping
 const STYLES={
-  normal:{speaker:'tôi', listener:'bạn',  poss:'của bạn',  selfPoss:'của mình'},
+  casual:{speaker:'tôi', listener:'bạn',  poss:'của bạn',  selfPoss:'của mình'},
+  normal:{speaker:'ta',  listener:'ngươi',poss:'của ngươi',selfPoss:'của ta'},
   formal:{speaker:'ta',  listener:'ngài', poss:'của ngài', selfPoss:'của ta'},
 };
 
@@ -1508,9 +1774,14 @@ function restorePhrases(t){
 
 // Detect chỉ từ EN source — KHÔNG nhìn VI output (tránh vòng lặp khuếch đại)
 function detectStyle(enText){
-  if(/\b(sir|madam|ma'am|ambassador|lord|lady|excellency|highness|chancellor|duke|duchess|sire)\b/i.test(enText))
+  if(/\b(sir|madam|ma'am|ambassador|lord|lady|excellency|highness|chancellor|duke|duchess|sire|your\s+honor|your\s+grace)\b/i.test(enText))
     return 'formal';
-  // Default: tôi/bạn
+  // String có color tags = game NPC dialogue → wuxia formal
+  if(/<color=/i.test(enText))
+    return 'formal';
+  // Wuxia / game context keywords
+  if(/\b(hero|warrior|master|stranger|traveler|traveller|jianghu|cultivation|sect|clan|elder|sage|trial|realm|guild)\b/i.test(enText))
+    return 'formal';
   return 'normal';
 }
 
@@ -1559,7 +1830,7 @@ function hardFix(text){
 }
 
 function vietPronounNormalize(text, enOrig){
-  const style=detectStyle(enOrig||'');
+  const style=_globalStyleLock||detectStyle(enOrig||'');
   let t=protectPhrases(text);
   t=normalizePronouns(t, style);
   t=restorePhrases(t);
@@ -1587,7 +1858,8 @@ const AR_PROTECT_MAP=[
 ];
 
 function arabicPronounNormalize(text, enOrig){
-  const style=detectStyleAR(enOrig||'');
+  // Use globalStyleLock for consistency across entire file; fall back to per-row detect
+  const style=(_globalStyleLock==='formal')?'formal':((_globalStyleLock==='normal'||_globalStyleLock==='casual')?'normal':detectStyleAR(enOrig||''));
   // 1. PROTECT
   AR_PROTECT_MAP.forEach(([p,tk])=>{ text=text.split(p).join(tk); });
   // 2. NORMALIZE
@@ -1632,12 +1904,26 @@ const KO_PROTECT_MAP=[
 ];
 
 function koreanPronounNormalize(text, enOrig){
-  const style=detectStyleKO(enOrig||'');
+  // Use globalStyleLock for consistency; fall back to per-row detect
+  const style=(_globalStyleLock==='formal')?'formal'
+            :(_globalStyleLock==='casual')?'casual'
+            :(_globalStyleLock==='normal')?'normal'
+            :detectStyleKO(enOrig||'');
   // 1. PROTECT 당신 particles first (we want to keep 당신+particle combos)
   KO_PROTECT_MAP.forEach(([p,tk])=>{ text=text.split(p).join(tk); });
   // 2. NORMALIZE
-  if(style==='normal'){
-    // Replace overly formal/archaic listener → 당신
+  if(style==='casual'){
+    // 반말: 너/나 are natural — only fix overly formal forms back to casual
+    text=text.split('각하').join('너');
+    text=text.split('나리').join('너');
+    text=text.split('대사님').join('너');
+    text=text.split('본인').join('나');
+    text=text.split('저는').join('나는');
+    text=text.split('저가').join('내가');
+    text=text.split('저를').join('나를');
+    text=text.split('당신').join('너');
+  } else if(style==='normal'){
+    // Polite: 당신/저 — replace archaic/casual forms
     text=text.split('각하').join('당신');
     text=text.split('나리').join('당신');
     text=text.split('대사님').join('당신');
@@ -1651,8 +1937,6 @@ function koreanPronounNormalize(text, enOrig){
   }
   // 3. RESTORE
   KO_PROTECT_MAP.forEach(([p,tk])=>{ text=text.split(tk).join(p); });
-  // 4. HARD-FIX speech endings consistency
-  // (LLM sometimes mixes -습니다 and -이오 in one sentence — leave to QA for now)
   return text;
 }
 
@@ -1668,17 +1952,19 @@ function applyPostProcess(text,langKey,type,enOrig){
   }
 
   // 2. Normalize pronouns per language
+  // VI: tắt — LLM tự handle pronoun theo PRONOUN RULE trong system prompt
+  // AR/KO: vẫn giữ để xử lý edge cases colloquial
   if(type==='dialogue'||type==='multi'){
-    if(langKey==='vi'){
-      text=vietPronounNormalize(text,enOrig||'');
-      return{out:text,changed:true};
-    }
     if(langKey==='ar'){
       text=arabicPronounNormalize(text,enOrig||'');
       return{out:text,changed:true};
     }
     if(langKey==='ko'){
       text=koreanPronounNormalize(text,enOrig||'');
+      return{out:text,changed:true};
+    }
+    if(langKey==='tr'){
+      text=turkishPronounNormalize(text,enOrig||'');
       return{out:text,changed:true};
     }
   }
@@ -1706,7 +1992,18 @@ function runQA(text,langKey,enOrig,type){
   if(type==='dialogue'&&enOrig&&enOrig.length>40&&text.length<enOrig.length*0.2)flags.push('⚠short');
   // Pronoun check: VI dialogue không được dùng "bạn" hoặc "tôi"
   if(langKey==='vi'&&(type==='dialogue'||type==='multi')){
-    if(/\bbạn\b|\btôi\b/i.test(text))flags.push('⚠pronoun');
+    // Chỉ flag nếu style là formal/normal (không phải casual tôi/bạn)
+    const sLock=typeof _globalStyleLock!=='undefined'?_globalStyleLock:null;
+    if(sLock!=='casual'&&/\bngươi\b/i.test(text))flags.push('⚠ngươi');
+  }
+  // Tag integrity check: token count + structural tag count
+  if(enOrig){
+    const qi=qaTokenIntegrity(enOrig,text);
+    if(!qi.ok)flags.push('⚠tag');
+    if(qi.emptyPairs>0)flags.push('⚠empty');
+    // Structural: color tag count mismatch (merge/drop bug)
+    const tc=detectTagCorruption(enOrig,text);
+    if(!tc.ok)flags.push('⚠struct');
   }
   return flags;
 }
@@ -1724,7 +2021,7 @@ function mkBatches(items){
     if(!group.length)return;
     let cur=[],ct=0;
     for(const item of group){
-      const t=tok(item.en)*2+6;
+      const t=tok(item.en)*2.5+8; // output dài hơn input, đặc biệt câu dài
       if(cur.length>0&&ct+t>budget){out.push(cur);cur=[];ct=0;}
       cur.push(item);ct+=t;
     }
@@ -1770,20 +2067,23 @@ function enforceGlossary(text, lines, type){
    GLOSSARY SOFT ENFORCEMENT for dialogue
    Dùng word-level replace chỉ cho proper noun (tên riêng, danh từ cố định)
    Không replace mid-sentence nếu term ngắn (< 4 chars) để tránh phá câu
+   QUAN TRỌNG: protect tags trước khi replace để tránh sửa attribute
+   (ví dụ: <color=iron> → <color=Thiết>)
 ══════════════════════════════════════════ */
 function enforceGlossaryDialogue(text, enOrig){
   const merged=getActiveMergedGloss();
+  // Protect tags trước — glossary chỉ được replace trong text content, không được chạm vào attributes
+  const{text:protText,map}=protectAll(text);
+  let result=protText;
   Object.entries(merged).forEach(([en,tgt])=>{
     if(!enOrig.toLowerCase().includes(en.toLowerCase())) return;
     if(en.length < 4) return;
-    // Replace EN term if LLM echoed it (shouldn't happen but safety)
     const reEn=new RegExp('\\b'+en.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'s?\\b','gi');
-    text=text.replace(reEn,tgt);
-    // Also fix wrong-case VI: e.g. "lữ khách" → "Lữ Khách"
+    result=result.replace(reEn,tgt);
     const reVi=new RegExp('\\b'+tgt.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','gi');
-    text=text.replace(reVi,tgt);
+    result=result.replace(reVi,tgt);
   });
-  return text;
+  return restoreAll(result,map);
 }
 /* ══════════════════════════════════════════
    PRONOUN DETECTION — minimal, safe-first
@@ -1795,18 +2095,18 @@ function mkPrompt(lines,type){
   type=type||detectType(lines[0]||'');
   const prof=LANG_PROFILES[currentLang];
   const ag=activeGlossForLines(lines);
-  let sys=prof.prompts[type]||prof.prompts.dialogue;
+  let sys=getPrompt(currentLang,type);
 
   // Inject pronoun rule cho mọi ngôn ngữ
   if(type==='dialogue'||type==='multi'){
     const src=lines.join(' ');
     if(currentLang==='vi'){
-      const pStyle=detectStyle(src);
+      const pStyle=_globalStyleLock||detectStyle(src);
       const s=STYLES[pStyle]||STYLES.normal;
-      sys+=`\n\nPRONOUN RULE: Speaker (I/me/my) = "${s.speaker}". Listener (you/your) = "${s.listener}". Possessive = "${s.poss}". NEVER use "ngươi".`;
+      sys+=`\n\n⚠ PRONOUN RULE (OVERRIDE — follows above): Speaker (I/me/my) MUST BE "${s.speaker}". Listener (you/your) MUST BE "${s.listener}". Possessive MUST BE "${s.poss}". We/us/our = "chúng ta". NEVER use any other pronoun for speaker/listener. NEVER use "ngươi" unless it IS the listener pronoun above.`;
     }
     if(currentLang==='ar'){
-      const arFormal=detectStyleAR(src)==='formal';
+      const arFormal=(_globalStyleLock==='formal')||(_globalStyleLock!=='normal'&&_globalStyleLock!=='casual'&&detectStyleAR(src)==='formal');
       if(arFormal){
         sys+=`\n\nPRONOUN RULE: Formal context detected. Use سيادتك for "you", سيدي/معالي for "sir/ambassador", أنا for speaker.`;
       } else {
@@ -1814,11 +2114,25 @@ function mkPrompt(lines,type){
       }
     }
     if(currentLang==='ko'){
-      const koFormal=detectStyleKO(src)==='formal';
+      const koFormal=(_globalStyleLock==='formal')||(_globalStyleLock!=='normal'&&_globalStyleLock!=='casual'&&detectStyleKO(src)==='formal');
+      const koCasual=_globalStyleLock==='casual';
       if(koFormal){
         sys+=`\n\nPRONOUN RULE: Formal context. Use 각하/나리 for "you", 본인 for speaker authority. Speech ending: -이오/-습니다.`;
+      } else if(koCasual){
+        sys+=`\n\nPRONOUN RULE: Casual/반말 mode. Use 너 for "you", 나 for "I". Speech ending: -야/-아/해체. Natural 반말 throughout. NEVER use 당신 or 저.`;
       } else {
         sys+=`\n\nPRONOUN RULE: Default polite. Use 당신 for "you" (NOT 각하/너). Use 저 for speaker. Speech ending: -습니다/-요. NEVER use 너.`;
+      }
+    }
+    if(currentLang==='tr'){
+      const trFormal=(_globalStyleLock==='formal')||(_globalStyleLock!=='normal'&&_globalStyleLock!=='casual'&&detectStyleTR(src)==='formal');
+      const trCasual=_globalStyleLock==='casual';
+      if(trFormal){
+        sys+=`\n\nPRONOUN RULE: Formal context. Use siz for "you", efendi/bey for "sir/lord", hazretleri for "excellency". Use ben for speaker. NEVER use sen.`;
+      } else if(trCasual){
+        sys+=`\n\nPRONOUN RULE: Casual mode. Use sen for "you", ben for "I". Natural casual Turkish. NEVER use siz unless quoting a title.`;
+      } else {
+        sys+=`\n\nPRONOUN RULE: Default natural. Use sen for "you" (most NPCs). Use ben for "I". Only switch to siz if source explicitly has sir/madam/excellency.`;
       }
     }
   }
@@ -1829,6 +2143,10 @@ function mkPrompt(lines,type){
   }
   if(lines.some(l=>/%[sdif]|\{[^}]+\}/.test(l))){
     sys+='\n\nPLACEHOLDER RULE: Preserve ALL placeholders EXACTLY (%s %d {0} etc). Do NOT remove or translate them.';
+  }
+  // Token protection rule — luôn inject nếu có ⟨T⟩ tokens trong input
+  if(lines.some(l=>/⟨T\d+⟩/.test(l))){
+    sys+='\n\nTOKEN RULE: Input has protected tokens ⟨T0⟩⟨T1⟩... = invisible HTML tags. STRICT RULES:\n1. NEVER drop, duplicate, or reorder any token — every ⟨Tn⟩ in input MUST appear in output\n2. Tokens come in PAIRS: ⟨T0⟩...⟨T1⟩, ⟨T2⟩...⟨T3⟩ — even=open, odd=close. EVERY pair must have content\n3. NEVER empty a token pair — ⟨T4⟩Cave⟨T5⟩ must NOT become ⟨T4⟩⟨T5⟩ (empty!). Always keep a translation inside\n4. Translate each pair INDEPENDENTLY — do NOT merge two pairs into one:\n   WRONG: ⟨T2⟩Ancient⟨T3⟩ ⟨T4⟩Cave⟨T5⟩ → ⟨T2⟩Cổ Động⟨T3⟩ ⟨T4⟩⟨T5⟩  ← Cave lost!\n   RIGHT:  ⟨T2⟩Ancient⟨T3⟩ ⟨T4⟩Cave⟨T5⟩ → ⟨T2⟩Cổ⟨T3⟩ ⟨T4⟩Động⟨T5⟩  ← each pair keeps one part\n5. NEVER swap content between pairs:\n   WRONG: ⟨T4⟩Common⟨T5⟩ ⟨T6⟩Sword⟨T7⟩ → ⟨T4⟩Kiếm⟨T5⟩ ⟨T6⟩Phổ Thông⟨T7⟩\n   RIGHT:  ⟨T4⟩Common⟨T5⟩ ⟨T6⟩Sword⟨T7⟩ → ⟨T4⟩Phổ Thông⟨T5⟩ ⟨T6⟩Kiếm⟨T7⟩\n6. Text OUTSIDE tokens stays outside. Count tokens in input = count in output';
   }
   const numbered=lines.map((l,i)=>`[${i+1}] ${l}`);
   const user=JSON.stringify(numbered);
@@ -1842,8 +2160,18 @@ function mkPrompt(lines,type){
 ══════════════════════════════════════════ */
 function repairJSON(raw,expectedLen){
   let s=raw.replace(/^```json\s*/,'').replace(/^```\s*/,'').replace(/\s*```$/,'').trim();
-  const start=s.indexOf('['),end=s.lastIndexOf(']');
-  if(start!==-1&&end>start)s=s.slice(start,end+1);
+
+  // Tìm array JSON thật sự bằng bracket depth — tránh bị lừa bởi ] trong [b]text[/b]
+  const start=s.indexOf('[');
+  if(start!==-1){
+    let depth=0,end=-1;
+    for(let i=start;i<s.length;i++){
+      if(s[i]==='[')depth++;
+      else if(s[i]===']'){depth--;if(depth===0){end=i;break;}}
+    }
+    if(end>start)s=s.slice(start,end+1);
+  }
+
   s=s.replace(/,\s*([\]}])/g,'$1');
   try{const arr=JSON.parse(s);if(Array.isArray(arr))return arr;}catch(_){}
   try{const arr=JSON.parse(s.replace(/[\r\n]+/g,' '));if(Array.isArray(arr))return arr;}catch(_){}
@@ -2161,7 +2489,7 @@ function reloadCol(){
   renderTable();updateCostEstimate();
 }
 function clearFile(){
-  rows=[];wb=null;wsName=null;headers=[];colIdx=0;ppCount=0;
+  rows=[];wb=null;wsName=null;headers=[];colIdx=0;ppCount=0;_globalStyleLock=null;
   cache.clear();
   try{localStorage.removeItem(CP_KEY);}catch(_){}
   document.getElementById('dropzone').classList.remove('got');
@@ -2194,6 +2522,22 @@ async function translateAll(){
   if(document.getElementById('use-typo').checked)applyFixes();
 
   apiCallCount=0;savedTok=0;totalTok=0;abortFlag=false;ppCount=0;
+  // Lock style for entire run — nhất quán toàn bộ 40k dòng
+  {
+    const lockSel=document.getElementById('style-lock').value;
+    if(lockSel!=='auto'){
+      _globalStyleLock=lockSel; // user override
+    } else {
+      // Sample tất cả pending rows → majority vote
+      const allPending=rows.filter(r=>r.status==='pending'||r.status==='stale');
+      const src=allPending.map(r=>r.en).join(' ');
+      // Use language-appropriate detect for auto mode
+      if(currentLang==='ar') _globalStyleLock=detectStyleAR(src);
+      else if(currentLang==='ko') _globalStyleLock=detectStyleKO(src);
+      else if(currentLang==='tr') _globalStyleLock=detectStyleTR(src);
+      else _globalStyleLock=detectStyle(src); // vi: formal/normal
+    }
+  }
   document.getElementById('gloss-notice').style.display='none';
   btn.disabled=true;
   document.getElementById('stop-btn').style.display='inline-block';
@@ -2239,7 +2583,17 @@ async function translateAll(){
 
     // Batch type is homogeneous (all same type from mkBatches grouping)
     const batchType=batch[0]._type||detectType(lines[0]||'');
-    const{sys,user,type:promptType}=mkPrompt(lines,batchType);apiCallCount++;
+
+    // ── TOKEN PROTECTION (ONE-PASS) ──────────────────────────────────
+    // Model KHÔNG thấy <color=...> </color> <enter> {…} %s
+    const tokenMaps=[];
+    const protectedLines=lines.map((line,idx)=>{
+      // Always single protectAll — compound path removed (caused segment misalign)
+      const{text,map}=protectAll(line);
+      tokenMaps[idx]={compound:false,map};
+      return text;
+    });
+    const{sys,user,type:promptType}=mkPrompt(protectedLines,batchType);apiCallCount++;
     const onWait=msg=>{st.innerHTML=`<span class="blink">⏳ ${msg}</span>`;};
 
     const callAPI=async(overrideSys)=>{
@@ -2248,7 +2602,7 @@ async function translateAll(){
         headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
         body:JSON.stringify({
           model:mainMdl,
-          max_tokens:Math.min(4096,lines.length*60+200),
+          max_tokens:Math.min(16000,Math.max(512,lines.reduce((s,l)=>s+Math.ceil(l.length/2),0)+300)),
           temperature:0.15,
           messages:[{role:'system',content:overrideSys||sys},{role:'user',content:user}]
         })
@@ -2259,17 +2613,53 @@ async function translateAll(){
     };
 
     try{
-      let raw=await callAPI();
       let arr;
-      try{arr=repairJSON(raw,lines.length);}
-      catch(parseErr){
-        logError(b,'json','repairJSON failed, retrying: '+parseErr.message);
-        raw=await callAPI('Output ONLY a valid JSON array of exactly '+lines.length+' '+prof.name+' strings.');
-        arr=repairJSON(raw,lines.length);
-      }
+      let structRetries=0;
+      while(true){
+        let raw=await callAPI();
+        try{arr=repairJSON(raw,lines.length);}
+        catch(parseErr){
+          logError(b,'json','repairJSON failed, retrying: '+parseErr.message);
+          raw=await callAPI('Output ONLY a valid JSON array of exactly '+lines.length+' '+prof.name+' strings.');
+          arr=repairJSON(raw,lines.length);
+        }
 
-      // Strip [N] prefix LLM may echo back
-      arr=arr.map(s=>String(s||'').replace(/^\[\d+\]\s*/,'').trim());
+        // Strip [N] prefix LLM may echo back
+        arr=arr.map(s=>String(s||'').replace(/^\[\d+\]\s*/,'').trim());
+
+        // ── RESTORE TOKENS ──────────────────────────────────────────────
+        arr=arr.map((out,idx)=>{
+          const tm=tokenMaps[idx];
+          if(!tm)return out;
+          return restoreAll(out,tm.map);
+        });
+        // ────────────────────────────────────────────────────────────────
+
+        // Structural corruption check — retry nếu color tag count lệch
+        const structCorrupt=arr.some((out,idx)=>{
+          const orig=lines[idx]||'';
+          if(!/<color=/i.test(orig))return false;
+          return !detectTagCorruption(orig,out).ok;
+        });
+        if(!structCorrupt||structRetries>=2) break; // ok hoặc hết retry
+        structRetries++;
+        onWait(`Tag corruption — retry #${structRetries} với prompt tăng cường...`);
+        await new Promise(r=>setTimeout(r,800));
+        const totalColorTags=lines.reduce((s,l)=>{
+          const n=(l.match(/<color=[^>]+>/g)||[]).length;TOKEN_REGEX.lastIndex=0;return s+n;
+        },0);
+        const strictTagSys=sys+`\n\n⚠ TAG INTEGRITY OVERRIDE — previous response REJECTED (wrong tag count).\nOriginal has ${totalColorTags} opening <color> tags. Output MUST match EXACTLY.\n• Each ⟨Tn⟩word⟨Tn+1⟩ pair: translate ONLY "word", keep inside SAME pair\n• NEVER merge ⟨T2⟩A⟨T3⟩ ⟨T4⟩B⟨T5⟩ → ⟨T2⟩AB⟨T3⟩ (FORBIDDEN — drops a pair)\n• If "A B" → compound "XY": split → ⟨T2⟩X⟨T3⟩ ⟨T4⟩Y⟨T5⟩ (one word per pair)`;
+        let raw2;try{raw2=await callAPI(strictTagSys);}catch(_){continue;}
+        let arr2;try{arr2=repairJSON(raw2,lines.length);}catch(_){continue;}
+        arr2=arr2.map(s=>String(s||'').replace(/^\[\d+\]\s*/,'').trim());
+        arr2=arr2.map((out,idx)=>{const tm=tokenMaps[idx];if(!tm)return out;return restoreAll(out,tm.map);});
+        const stillCorrupt=arr2.some((out,idx)=>{
+          const orig=lines[idx]||'';if(!/<color=/i.test(orig))return false;
+          return !detectTagCorruption(orig,out).ok;
+        });
+        arr=arr2;
+        if(!stillCorrupt) break;
+      }
 
       batch.forEach((r,j)=>{
         const ri=rows.indexOf(r);
@@ -2329,7 +2719,6 @@ async function translateAll(){
   document.getElementById('ps-llm').className='pipe-step done';
   document.getElementById('ps-pp').className='pipe-step done';
   document.getElementById('ps-qa').className='pipe-step done';
-
   const errs=rows.filter(r=>r.status==='error').length;
   if(!abortFlag){
     if(!errs){
@@ -2358,6 +2747,7 @@ function exportExcel(){
   XLSX.utils.book_append_sheet(wbOut,ws,'Translated');
   XLSX.writeFile(wbOut,'weapon_names_'+currentLang+'_'+Date.now()+'.xlsx');
 }
+
 
 /* ══════════════════════════════════════════
    GLOSSARY ↔ GITHUB REPO (glossary.json)
