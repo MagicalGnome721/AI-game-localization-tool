@@ -2,33 +2,35 @@
   "vi": [
     {
       "en": "Dark Goddess Palace",
-      "ar": "Hắc Ám Nữ Thần Cung"
+      "tgt": "Hắc Ám Nữ Thần Cung"
     },
     {
       "en": "Guild Master",
-      "ar": "Bang Chủ"
+      "tgt": "Bang Chủ"
     },
     {
       "en": "Dragon Soul Forbidden Land Ticket",
-      "ar": "Long Hồn Cấm Địa Lệnh"
+      "tgt": "Long Hồn Cấm Địa Lệnh"
     },
     {
       "en": "Stable Master",
-      "ar": "Trại Chủ"
+      "tgt": "Trại Chủ"
     },
     {
       "en": "Silk Road",
-      "ar": "Con Đường Tơ Lụa"
+      "tgt": "Con Đường Tơ Lụa"
     },
     {
       "en": "traveler",
-      "ar": "lữ khách"
+      "tgt": "lữ khách"
     },
     {
       "en": "mama",
-      "ar": "mẹ"
+      "tgt": "mẹ"
     }
   ],
   "ar": [],
-  "ko": []
+  "ko": [],
+  "tr": [],
+  "km": []
 }
