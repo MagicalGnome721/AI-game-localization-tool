@@ -1,7 +1,9 @@
 <html lang="vi"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Weapon Naming Tool v8 — VI · AR · KO</title>
+<title>Weapon Naming Tool v8 — VI · AR · KO · TR · KM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Khmer:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 :root{
@@ -16,7 +18,7 @@
   --v-bg:#fff0f6;--v-tx:#c2185b;
   --r:8px;--rl:12px;
   --mono:'Menlo','Consolas','Monaco',monospace;
-  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans Khmer',sans-serif;
 }
 @media(prefers-color-scheme:dark){:root{
   --bg:#1e1e1c;--bg2:#2a2a28;--bg3:#323230;
@@ -199,6 +201,7 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
       <button class="lang-tab" onclick="setLang('ar')">🇸🇦 Ả Rập</button>
       <button class="lang-tab" onclick="setLang('ko')">🇰🇷 Hàn Quốc</button>
       <button class="lang-tab" onclick="setLang('tr')">🇹🇷 Thổ Nhĩ Kỳ</button>
+      <button class="lang-tab" onclick="setLang('km')">🇰🇭 Khmer</button>
     </div>
     <div id="lang-status" style="font-size:11px;color:var(--s-tx);">✓ Đã load: prompt Vietnamese · 50 glossary terms · post-process rules</div>
   </div>
@@ -311,9 +314,9 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
           <div class="sc-t">PHONG CÁCH (áp cố định toàn bộ)</div>
           <select id="style-lock" style="width:100%;font-size:12px;padding:4px 8px;">
             <option value="auto">Auto — tự phát hiện</option>
-            <option value="casual">Hiện đại (VI: tôi/bạn · KO: 너/나 · AR: أنت/أنا · TR: sen/ben)</option>
-            <option value="normal">Cổ phong (VI: ta/ngươi · KO: 당신/저 · AR: أنت/أنا · TR: sen/ben)</option>
-            <option value="formal">Trang trọng (VI: ta/ngài · KO: 각하/본인 · AR: سيادتك · TR: siz/efendi)</option>
+            <option value="casual">Hiện đại (VI: tôi/bạn · KO: 너/나 · AR: أنت/أنا · TR: sen/ben · KM: ខ្ញុំ/អ្នក)</option>
+            <option value="normal">Cổ phong (VI: ta/ngươi · KO: 당신/저 · AR: أنت/أنا · TR: sen/ben · KM: ខ្ញុំ/លោក)</option>
+            <option value="formal">Trang trọng (VI: ta/ngài · KO: 각하/본인 · AR: سيادتك · TR: siz/efendi · KM: ខ្ញុំ/ព្រះអង្គ)</option>
           </select>
         </div>
         <div class="sc">
@@ -369,6 +372,7 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
       <button class="btn btn-sm" onclick="document.getElementById('gfile').click()">Nhập JSON</button>
       <button class="btn btn-sm" onclick="exportGloss()">Xuất JSON</button>
       <button class="btn btn-sm btn-s" onclick="saveHtmlWithGloss()">💾 Lưu HTML</button>
+      <button class="btn btn-sm btn-w" onclick="retranslateGlossMatches()" title="Tìm các dòng English khớp glossary hiện tại và dịch lại">↻ Dịch lại khớp</button>
       <button class="btn btn-sm" id="gh-push-btn" onclick="pushGloss()" style="border-color:#6e40c9;color:#6e40c9;">⬆ Push repo</button>
       <button class="btn btn-sm" onclick="toggleGhToken()" title="Cấu hình GitHub Token" style="padding:3px 7px;color:var(--text3);">⚙</button>
     </div>
@@ -594,6 +598,7 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
 <div class="stats" id="statsrow" style="display: flex;">
   <div class="stat"><div class="stat-v" id="sv-done">22</div><div class="stat-l">Đã dịch</div></div>
   <div class="stat"><div class="stat-v" id="sv-cache">0</div><div class="stat-l">Cache</div></div>
+  <div class="stat"><div class="stat-v" id="sv-tm" style="color:var(--p-tx)">0</div><div class="stat-l">Fuzzy TM</div></div>
   <div class="stat"><div class="stat-v" id="sv-pp">0</div><div class="stat-l">Post-processed</div></div>
   <div class="stat"><div class="stat-v" id="sv-calls">0</div><div class="stat-l">API calls</div></div>
   <div class="stat"><div class="stat-v" id="sv-qa">17</div><div class="stat-l">QA cảnh báo</div></div>
@@ -869,9 +874,39 @@ function joinWithEnter(parts) { return parts.join('<enter>'); }
 /* ══════════════════════════════════════════
    GLOBAL STATE
 ══════════════════════════════════════════ */
-let rows=[],customGlossByLang={vi:[],ar:[],ko:[]},cache=new Map(),wb=null,wsName=null,headers=[],colIdx=0,currentFilename='';
+let rows=[],customGlossByLang={vi:[],ar:[],ko:[],tr:[],km:[]},cache=new Map(),wb=null,wsName=null,headers=[],colIdx=0,currentFilename='';
 
 function getLangGloss(){return customGlossByLang[currentLang]||(customGlossByLang[currentLang]=[]);}
+function normalizeGlossEntry(g, lang=currentLang){
+  if(!g)return null;
+  if(Array.isArray(g)){
+    const en=String(g[0]||'').trim();
+    const tgt=String(g[1]||'').trim();
+    return en&&tgt?{en,tgt}:null;
+  }
+  if(typeof g==='string')return null;
+  const en=String(g.en||g.key||g.source||g.term||'').trim();
+  const val=g.tgt ?? g[lang] ?? g.vi ?? g.value ?? g.translation ?? g.target ?? g.ar ?? g.ko ?? g.tr ?? g.km ?? '';
+  const tgt=String(val||'').trim();
+  return en&&tgt?{en,tgt}:null;
+}
+function normalizeGlossArray(arr, lang=currentLang){
+  if(!Array.isArray(arr))return [];
+  const out=[];
+  arr.forEach(g=>{const n=normalizeGlossEntry(g,lang);if(n)out.push(n);});
+  return out;
+}
+function ensureGlossLoaded(lang=currentLang){
+  // Embedded glossary là glossary đã lưu vào HTML. Khi mở file hoặc đổi ngôn ngữ,
+  // copy nó vào bảng Glossary Tùy Chỉnh nếu bảng đang trống để user nhìn thấy và sửa được.
+  if(!customGlossByLang)customGlossByLang={vi:[],ar:[],ko:[],tr:[],km:[]};
+  customGlossByLang[lang]=normalizeGlossArray(customGlossByLang[lang]||[],lang);
+  const emb=normalizeGlossArray(EMBEDDED_GLOSS_BY_LANG[lang]||[],lang);
+  if(!customGlossByLang[lang].length && emb.length){
+    customGlossByLang[lang]=emb.map(g=>({en:g.en,tgt:g.tgt}));
+  }
+  return customGlossByLang[lang];
+}
 let apiCallCount=0,savedTok=0,totalTok=0,abortFlag=false,ppCount=0;
 let currentLang='vi';
 
@@ -880,7 +915,7 @@ let currentLang='vi';
    Khi mở file, glossary sẽ tự load vào công cụ.
    KHÔNG chỉnh tay — dùng nút trong UI.
 ─────────────────────────────────────────────────────────────────── */
-const EMBEDDED_GLOSS_BY_LANG = {"vi":[{"en":"Dark Goddess Palace","ar":"Hắc Ám Nữ Thần Cung"},{"en":"Guild Master","ar":"Bang Chủ"},{"en":"Dragon Soul Forbidden Land Ticket","ar":"Long Hồn Cấm Địa Lệnh"},{"en":"Stable Master","ar":"Trại Chủ"},{"en":"Silk Road","ar":"Con Đường Tơ Lụa"}],"ar":[],"ko":[]}; /* __GLOSS_DATA__ */
+const EMBEDDED_GLOSS_BY_LANG = {"vi":[{"en":"Dark Goddess Palace","tgt":"Hắc Ám Nữ Thần Cung"},{"en":"Guild Master","tgt":"Bang Chủ"},{"en":"Dragon Soul Forbidden Land Ticket","tgt":"Long Hồn Cấm Địa Lệnh"},{"en":"Stable Master","tgt":"Trại Chủ"},{"en":"Silk Road","tgt":"Con Đường Tơ Lụa"}],"ar":[],"ko":[],"tr":[],"km":[]}; /* __GLOSS_DATA__ */
 
 /* ══════════════════════════════════════════
    KNOWN TYPOS (Phase 1 — input cleaning)
@@ -1296,6 +1331,85 @@ Return ONLY a JSON array, same length as input. No explanation.`,
     },
   },
 
+  km: {
+    name:'Khmer', viName:'Khmer', flag:'🇰🇭',
+    rtl:false, font:'sans', tokRatio:0.95,
+    get systemPrompt(){return this.prompts.weapon;},
+    prompts:{
+      weapon:
+`Translate each English weapon/item name into Khmer for a fantasy MMO.
+- Use formal Khmer with Sanskrit-Pali roots where appropriate (e.g. អគ្នី, ទេព, វិញ្ញាណ)
+- Short and powerful: 2–5 Khmer syllables preferred
+- Weapon LOCK: Sword→ដាវ|Blade→ព្រឹស|Spear→លំពែង|Lance→លំពែង|Pike→ដំបង|Glaive→ដាវវែង|Halberd→ដាវវែង|Polearm→ដំបង|Bow→ធ្នូ|Crescent→កណ្ដៀវ
+- Structure: [Element/Attribute]+[Weapon], e.g. Evil Flame Spear→លំពែងអគ្នីអសូរ
+Examples: Dragon Blade→ព្រឹសនាគ | Blood Sword→ដាវឈាម | Divine Bow→ធ្នូទេព
+Return ONLY a JSON array, same length as input. No explanation.`,
+
+      dialogue:
+`Translate each NPC dialogue line into natural Khmer for a fantasy MMO.
+- Keep full meaning, natural and immersive
+- PRONOUNS (context-based):
+  · DEFAULT "I/me" → ខ្ញុំ (khnhom — polite, standard NPC)
+  · DEFAULT "you" → អ្នក (anak — neutral) or លោក (lok — respectful male)
+  · ONLY use archaic if source has "lord/excellency/your grace/your highness":
+    → "you" → ព្រះអង្គ | "excellency" → ព្រះករុណា
+  · NEVER use ឯង (too rude/intimate for NPC to player)
+  · NEVER use colloquial short forms that break immersion
+- Preserve placeholders (%s %d {0}) exactly
+- Keep pipe separator | between parts if present
+Return ONLY a JSON array, same length as input. No explanation.`,
+
+      system:
+`Translate each UI/system message into clear Khmer.
+- Clear and concise
+- Keep placeholders EXACTLY: %s %d {0} {1}
+- No stylistic rewriting — functional language only
+Return ONLY a JSON array, same length as input. No explanation.`,
+
+      multi:
+`Translate each dialogue segment (may contain | separators) into natural Khmer.
+- Translate each part, keep | separator
+- Apply same pronoun rules as dialogue
+- Keep placeholders exactly
+Return ONLY a JSON array, same length as input. No explanation.`,
+    },
+    glossary:{
+      'Fire':'អគ្នី','Flame':'ភ្លើង','Hellfire':'អគ្នីនរក',
+      'Frost':'ទឹករឹម','Frozen':'ទឹករឹម','Blizzard':'ព្យុះទឹកកក','Freezing':'ខ្យល់ត្រជាក់',
+      'Blood':'ឈាម','Bloody':'ឈាម',
+      'Dragon':'នាគ','Snake':'ពស់','Python':'ពស់ក្រពើ','Phoenix':'ភ្ស្ដ',
+      'Girin':'គីរីន','Satan':'មារ',
+      'Soul':'វិញ្ញាណ','Spirit':'ព្រលឹង','Ghost':'ខ្មោច',
+      'Evil':'អសូរ','Dark':'ងងឹត','Holy':'បរិសុទ្ធ','Divine':'ទេព',
+      'Imperial':'ចក្រ','Lord':'ចៅ','Master':'ម្ចាស់',
+      'General':'សេនាបតី','Reaper':'យមទូត','Demon':'យក្ស',
+      'Sword':'ដាវ','Blade':'ព្រឹស','Spear':'លំពែង','Lance':'លំពែង',
+      'Pike':'ដំបង','Glaive':'ដាវវែង','Halberd':'ដាវវែង','Polearm':'ដំបង',
+      'Bow':'ធ្នូ','Crescent':'កណ្ដៀវ',
+      'Gold':'មាស','Silver':'ប្រាក់','Iron':'ដែក',
+      'Copper':'ទង់','Bronze':'សំរិទ្ធ','Jade':'ថ្មមណី',
+      'Moon':'ចន្ទ','Heaven':'ស្ថាន','Lightning':'រន្ទះ','Poison':'ពុល',
+      'Storm':'ព្យុះ','Break':'បំបែក',
+    },
+    postProcess:(s)=>{
+      s=s.replace(/\s{2,}/g,' ');
+      return s.trim();
+    },
+    postRules:[
+      'Weapon lock: ដាវ/ព្រឹស/លំពែង/ធ្នូ/ដំបង',
+      'Sanskrit-Pali roots for epic terms (អគ្នី, ទេព, វិញ្ញាណ)',
+      'Max 5 syllables — warning nếu dài hơn',
+      'Xóa double spaces',
+    ],
+    qaCheck:(s)=>{
+      const flags=[];
+      // Đếm ký tự Khmer (U+1780–U+17FF)
+      const khmerLen=[...s].filter(c=>c>='\u1780'&&c<='\u17FF').length;
+      if(khmerLen>0&&s.split(/\s+/).length>7)flags.push('📏');
+      return flags;
+    },
+  },
+
 };
 
 /* ══════════════════════════════════════════
@@ -1368,7 +1482,7 @@ function setLang(key){
   const prof=LANG_PROFILES[key];
   // Update tabs
   document.querySelectorAll('.lang-tab').forEach((t,i)=>{
-    const keys=['vi','ar','ko','tr'];
+    const keys=['vi','ar','ko','tr','km'];
     t.classList.toggle('active',keys[i]===key);
   });
   // Update labels
@@ -1386,6 +1500,7 @@ function setLang(key){
   // Refresh pipeline preview
   renderPipelinePreview();
   // Refresh UI
+  ensureGlossLoaded(key);
   renderGloss();
   if(rows.length){renderTable();updateCostEstimate();}
   updatePipelineStatus();
@@ -1513,8 +1628,10 @@ function detectType(text){
 
 /* ══ CACHE KEY VERSIONING ══ */
 function glossVersion(){
-  const keys=Object.keys(getActiveMergedGloss()).sort().join(',');
-  let h=5381;for(let i=0;i<keys.length;i++)h=(h*33^keys.charCodeAt(i))>>>0;
+  // Hash cả EN key lẫn TGT value — đảm bảo cache invalid khi sửa bản dịch glossary
+  const pairs=Object.entries(getActiveMergedGloss()).sort(([a],[b])=>a<b?-1:1)
+    .map(([en,tgt])=>en+'→'+tgt).join('|');
+  let h=5381;for(let i=0;i<pairs.length;i++)h=(h*33^pairs.charCodeAt(i))>>>0;
   return h.toString(36);
 }
 function cacheKey(text,type){
@@ -1563,16 +1680,17 @@ function getActiveMergedGloss(){
   // Merge: lang embedded + custom additions (custom overrides)
   const prof=LANG_PROFILES[currentLang];
   const merged={...prof.glossary};
-  getLangGloss().forEach(g=>{if(g.en&&g.ar)merged[g.en]=g.ar;});
+  getLangGloss().forEach(g=>{if(g.en&&g.tgt)merged[g.en]=g.tgt;});
   return merged;
 }
 function renderGloss(){
+  ensureGlossLoaded(currentLang);
   const prof=LANG_PROFILES[currentLang];
   const gloss=getLangGloss();
   const embLang=(EMBEDDED_GLOSS_BY_LANG[currentLang]||[]);
   const isEmbedded=embLang.length>0&&
     gloss.length===embLang.length&&
-    gloss.every((g,i)=>g.en===embLang[i]?.en&&g.ar===embLang[i]?.ar);
+    gloss.every((g,i)=>g.en===embLang[i]?.en&&g.tgt===embLang[i]?.tgt);
   document.getElementById('gcnt').textContent=gloss.length+' thuật ngữ — '+prof.viName;
   const embedBadge=document.getElementById('embed-badge');
   if(embedBadge)embedBadge.style.display=embLang.length>0?'inline-flex':'none';
@@ -1584,7 +1702,7 @@ function renderGloss(){
   b.innerHTML=gloss.map((g,i)=>`<tr>
     <td style="color:var(--text3)">${i+1}</td>
     <td style="font-weight:500">${esc(g.en)}</td>
-    <td style="${prof.rtl?'direction:rtl;text-align:right;':''}color:var(--i-tx);font-family:var(--sans);">${esc(g.ar)}</td>
+    <td style="${prof.rtl?'direction:rtl;text-align:right;':''}color:var(--i-tx);font-family:var(--sans);">${esc(g.tgt)}</td>
     <td><button class="btn btn-d" onclick="rmGloss(${i})">×</button></td>
   </tr>`).join('');
 }
@@ -1603,13 +1721,13 @@ function saveHtmlWithGloss(){
   const html=document.documentElement.outerHTML;
   // Gộp embedded gốc + custom theo từng ngôn ngữ
   const merged={};
-  ['vi','ar','ko'].forEach(lang=>{
+  ['vi','ar','ko','tr','km'].forEach(lang=>{
     const emb=EMBEDDED_GLOSS_BY_LANG[lang]||[];
     const custom=customGlossByLang[lang]||[];
     const map={};
-    emb.forEach(g=>{map[g.en]=g.ar;});
-    custom.forEach(g=>{map[g.en]=g.ar;});
-    merged[lang]=Object.entries(map).map(([en,ar])=>({en,ar}));
+    emb.forEach(g=>{map[g.en]=g.tgt;});
+    custom.forEach(g=>{map[g.en]=g.tgt;});
+    merged[lang]=Object.entries(map).map(([en,tgt])=>({en,tgt}));
   });
   const glossJson=JSON.stringify(merged);
   const newHtml=html.replace(
@@ -1630,7 +1748,7 @@ function saveHtmlWithGloss(){
   setTimeout(()=>URL.revokeObjectURL(a.href),5000);
   // Thông báo
   const st=document.getElementById('api-st');
-  if(st){st.textContent=`✓ Đã lưu HTML với ${totalTerms} thuật ngữ (VI+AR+KO) — gửi file này cho người khác là dùng được luôn`;st.className='st ok';}
+  if(st){st.textContent=`✓ Đã lưu HTML với ${totalTerms} thuật ngữ (VI+AR+KO+TR+KM) — gửi file này cho người khác là dùng được luôn`;st.className='st ok';}
 }
 /* ══════════════════════════════════════════
    SELECTIVE CACHE INVALIDATION
@@ -1644,8 +1762,12 @@ function invalidateByGloss(terms){
   rows.forEach((r,i)=>{
     const hit=terms.some(t=>r.en.toLowerCase().includes(t.toLowerCase()));
     if(hit&&(r.status==='done'||r.status==='cached'||r.status==='stale')){
-      r.status='stale'; // đánh dấu cần dịch lại, GIỮ r.ar & r.pp để vẫn thấy bản cũ
-      cache.delete(normKey(r.en)); // xóa cache entry
+      r.status='stale'; // đánh dấu cần dịch lại, GIỮ r.tgt & r.pp để vẫn thấy bản cũ
+      r._forceApi=true; // bắt buộc gọi API lại, không ăn cache/TM
+      // Xóa mọi cache entry liên quan dòng này trong ngôn ngữ hiện tại.
+      for(const ck of Array.from(cache.keys())){
+        if(ck.startsWith(normKey(r.en)+'|')&&ck.includes('|'+currentLang+'|')) cache.delete(ck);
+      }
       affected.push(i);
     }
   });
@@ -1671,21 +1793,42 @@ function dismissGlossNotice(){
 }
 
 async function retranslateStale(){
-  // Chuyển stale → pending rồi dịch
-  rows.forEach(r=>{if(r.status==='stale'){r.status='pending';r.ar='';r.pp='';}});
+  // Giữ status='stale' để translateAll() BỎ QUA cache pass.
+  // Nếu đổi stale -> pending ở đây, cache cũ có thể bị dùng lại và hiện 'Cache hit — 0 API calls!'.
+  rows.forEach(r=>{
+    if(r.status==='stale'){
+      r.tgt='';
+      r.pp='';
+      r.mode='retranslate';
+    }
+  });
   document.getElementById('gloss-notice').style.display='none';
   renderTable();
   await translateAll();
 }
 
+function retranslateGlossMatches(){
+  const gloss=getLangGloss().filter(g=>g.en&&g.tgt);
+  if(!gloss.length){alert('Glossary hiện tại đang trống. Hãy thêm thuật ngữ trước.');return;}
+  if(!rows.length){alert('Chưa có file/dòng nào để dịch lại. Hãy load Excel/CSV trước.');return;}
+  const terms=gloss.map(g=>g.en);
+  const {count}=invalidateByGloss(terms);
+  if(count>0){
+    renderTable();
+    showGlossNotice('glossary hiện tại',count,'khớp');
+  }else{
+    alert('Không tìm thấy dòng đã dịch nào khớp glossary hiện tại. Kiểm tra lại cụm English có xuất hiện y nguyên trong cột English không.');
+  }
+}
+
 function addGloss(){
-  const en=document.getElementById('gs').value.trim(),ar=document.getElementById('gt').value.trim();
-  if(!en||!ar)return;
+  const en=document.getElementById('gs').value.trim(),tgt=document.getElementById('gt').value.trim();
+  if(!en||!tgt)return;
   const gloss=getLangGloss();
   const existing=gloss.find(g=>g.en.toLowerCase()===en.toLowerCase());
   const action=existing?'cập nhật':'thêm';
-  if(existing){existing.ar=ar;} // update
-  else{gloss.push({en,ar});}
+  if(existing){existing.tgt=tgt;} // update
+  else{gloss.push({en,tgt});}
   document.getElementById('gs').value='';document.getElementById('gt').value='';
   renderGloss();
   // Selective invalidation
@@ -1720,15 +1863,25 @@ function importGloss(ev){
       const d=JSON.parse(e.target.result);
       const gloss=getLangGloss();
       const prof=LANG_PROFILES[currentLang];
-      let added=0;
-      const arr=Array.isArray(d)?d:Object.entries(d).map(([en,ar])=>({en,ar}));
+      let added=0,updated=0;
+      const touched=[];
+      const arr=Array.isArray(d)?d:Object.entries(d).map(([en,tgt])=>({en,tgt}));
       arr.forEach(g=>{
-        if(!g.en||!g.ar)return;
-        const ex=gloss.find(x=>x.en.toLowerCase()===g.en.toLowerCase());
-        if(ex){ex.ar=g.ar;}else{gloss.push({en:g.en,ar:g.ar});added++;}
+        const _gt=g.tgt||g.vi||g.value||g.translation||g.ar||'';if(!g.en||!_gt)return;
+        const en=String(g.en).trim(), tgt=String(_gt).trim();
+        if(!en||!tgt)return;
+        const ex=gloss.find(x=>x.en.toLowerCase()===en.toLowerCase());
+        if(ex){ex.tgt=tgt;updated++;}
+        else{gloss.push({en,tgt});added++;}
+        touched.push(en);
       });
       renderGloss();
-      alert('Nhập '+prof.viName+': '+added+' thuật ngữ mới.');
+      if(touched.length){
+        const {count}=invalidateByGloss(touched);
+        if(count>0){renderTable();showGlossNotice('file glossary import',count,'cập nhật');}
+        if(rows.length)updateCostEstimate();
+      }
+      alert('Nhập '+prof.viName+': '+added+' thuật ngữ mới, '+updated+' thuật ngữ cập nhật.');
     }catch(err){alert('Lỗi đọc file: '+err.message);}
     ev.target.value='';
   };
@@ -1941,8 +2094,38 @@ function koreanPronounNormalize(text, enOrig){
 }
 
 /* ══════════════════════════════════════════
-   POST-PROCESS ENGINE
+   KHMER STYLE DETECTION & NORMALIZER
 ══════════════════════════════════════════ */
+function detectStyleKM(enText){
+  if(/\b(sir|madam|ma'am|ambassador|lord|lady|excellency|highness|chancellor|your\s+honor|sire)\b/i.test(enText)) return'formal';
+  return'normal';
+}
+
+const KM_PROTECT_MAP=[
+  ['ព្រះអង្គ',  '〈KM_YOUREX〉'],
+  ['ព្រះករុណា', '〈KM_GRACE〉'],
+  ['ព្រះចន្ទ',  '〈KM_MOON〉'],
+];
+
+function khmerPronounNormalize(text, enOrig){
+  const style=(_globalStyleLock==='formal')?'formal'
+            :(_globalStyleLock==='casual')?'casual'
+            :(_globalStyleLock==='normal')?'normal'
+            :detectStyleKM(enOrig||'');
+  KM_PROTECT_MAP.forEach(([p,tk])=>{ text=text.split(p).join(tk); });
+  if(style==='casual'){
+    text=text.split('ព្រះអង្គ').join('អ្នក');
+    text=text.split('លោក').join('អ្នក');
+  } else if(style==='normal'){
+    // Neutral: ឯង (too rude) → អ្នក
+    text=text.split('ឯង').join('អ្នក');
+  } else {
+    // Formal: ឯង → ព្រះអង្គ
+    text=text.split('ឯង').join('ព្រះអង្គ');
+  }
+  KM_PROTECT_MAP.forEach(([p,tk])=>{ text=text.split(tk).join(p); });
+  return text;
+}
 function applyPostProcess(text,langKey,type,enOrig){
   // 1. Glossary hard enforcement (weapon) / soft enforcement (dialogue)
   if(type==='weapon'){
@@ -1965,6 +2148,10 @@ function applyPostProcess(text,langKey,type,enOrig){
     }
     if(langKey==='tr'){
       text=turkishPronounNormalize(text,enOrig||'');
+      return{out:text,changed:true};
+    }
+    if(langKey==='km'){
+      text=khmerPronounNormalize(text,enOrig||'');
       return{out:text,changed:true};
     }
   }
@@ -2006,6 +2193,61 @@ function runQA(text,langKey,enOrig,type){
     if(!tc.ok)flags.push('⚠struct');
   }
   return flags;
+}
+
+/* ══════════════════════════════════════════
+   FUZZY TRANSLATION MEMORY
+   Tách biệt với cache — cache là exact-match session
+   TM tích luỹ mọi bản dịch → fuzzy lookup ≥85%
+   Thuật toán: Levenshtein trên normKey
+   O(n·m) per pair, length-filter trước
+══════════════════════════════════════════ */
+const TM = new Map();   // normKey → {tgt, pp, lang, type}
+let tmHitCount = 0;
+const TM_THRESHOLD = 0.85;
+
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  let prev = Array.from({length: n + 1}, (_, j) => j);
+  const curr = new Array(n + 1);
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= n; j++) {
+      curr[j] = a[i-1] === b[j-1]
+        ? prev[j-1]
+        : 1 + Math.min(prev[j], curr[j-1], prev[j-1]);
+    }
+    for (let j = 0; j <= n; j++) prev[j] = curr[j];
+  }
+  return prev[n];
+}
+
+function tmSimilarity(a, b) {
+  const maxLen = Math.max(a.length, b.length);
+  if (!maxLen) return 1;
+  return 1 - levenshtein(a, b) / maxLen;
+}
+
+function tmStore(en, tgt, pp, lang, type) {
+  TM.set(normKey(en), {tgt, pp, lang, type});
+}
+
+function tmLookup(en, lang, type) {
+  const k = normKey(en);
+  const exact = TM.get(k);
+  if (exact && exact.lang === lang && exact.type === type)
+    return {...exact, match: 1.0};
+  let best = null, bestScore = TM_THRESHOLD - 0.001;
+  for (const [key, val] of TM) {
+    if (val.lang !== lang || val.type !== type) continue;
+    const lenRatio = Math.abs(key.length - k.length) / Math.max(key.length, k.length, 1);
+    if (lenRatio > 0.35) continue;
+    const score = tmSimilarity(k, key);
+    if (score > bestScore) { bestScore = score; best = {...val, match: score}; }
+  }
+  return best;
 }
 
 /* ══════════════════════════════════════════
@@ -2135,6 +2377,17 @@ function mkPrompt(lines,type){
         sys+=`\n\nPRONOUN RULE: Default natural. Use sen for "you" (most NPCs). Use ben for "I". Only switch to siz if source explicitly has sir/madam/excellency.`;
       }
     }
+    if(currentLang==='km'){
+      const kmFormal=(_globalStyleLock==='formal')||(_globalStyleLock!=='normal'&&_globalStyleLock!=='casual'&&detectStyleKM(src)==='formal');
+      const kmCasual=_globalStyleLock==='casual';
+      if(kmFormal){
+        sys+=`\n\nPRONOUN RULE: Formal/epic context. Use ព្រះអង្គ for "you" (lord/excellency), ព្រះករុណា for "your grace". Use ខ្ញុំ for speaker. NEVER use ឯង.`;
+      } else if(kmCasual){
+        sys+=`\n\nPRONOUN RULE: Casual. Use អ្នក for "you", ខ្ញុំ for "I". Natural casual Khmer. NEVER use ឯង.`;
+      } else {
+        sys+=`\n\nPRONOUN RULE: Default polite. Use លោក or អ្នក for "you" (NOT ឯង). Use ខ្ញុំ for speaker. Polite fantasy MMO register.`;
+      }
+    }
   }
 
   if(type!=='system'&&ag.length>0){
@@ -2150,6 +2403,14 @@ function mkPrompt(lines,type){
   }
   const numbered=lines.map((l,i)=>`[${i+1}] ${l}`);
   const user=JSON.stringify(numbered);
+
+  // Rewrite "Return ONLY a JSON array" → {"items":[...]} để tương thích response_format json_object
+  // json_object mode yêu cầu top-level là {} không phải [] — đây là patch cho đúng contract
+  sys=sys.replace(
+    /Return ONLY a JSON array[^.]*\./gi,
+    'Return ONLY a JSON object: {"items":["translation1","translation2",...]} — same length as input. No explanation.'
+  );
+
   const naiveTok=tok('Translate. Return JSON.')+tok(JSON.stringify(lines));
   totalTok+=naiveTok;savedTok+=Math.max(0,naiveTok-tok(sys)-tok(user));
   return{sys,user,type};
@@ -2159,30 +2420,81 @@ function mkPrompt(lines,type){
    JSON REPAIR
 ══════════════════════════════════════════ */
 function repairJSON(raw,expectedLen){
-  let s=raw.replace(/^```json\s*/,'').replace(/^```\s*/,'').replace(/\s*```$/,'').trim();
+  let s=String(raw||'').trim()
+    .replace(/^```(?:json)?\s*/i,'')
+    .replace(/\s*```$/,'')
+    .trim();
 
-  // Tìm array JSON thật sự bằng bracket depth — tránh bị lừa bởi ] trong [b]text[/b]
+  const normalizeArray=(arr)=>{
+    if(!Array.isArray(arr))throw new Error('Parsed value is not array');
+    arr=arr.map(x=>{
+      if(x==null)return '';
+      if(typeof x==='string')return x;
+      if(typeof x==='object')return x.text??x.translation??x.value??x.output??JSON.stringify(x);
+      return String(x);
+    });
+
+    // Safety guard: key "items" must never become row #1 translation.
+    if(arr[0]==='items'&&arr.length===expectedLen+1){
+      arr=arr.slice(1);
+    }
+    if(arr[0]==='items'){
+      throw new Error('Parser bug: object key "items" leaked into translations');
+    }
+    if(arr.length!==expectedLen){
+      throw new Error('JSON length mismatch: got '+arr.length+', expected '+expectedLen);
+    }
+    return arr;
+  };
+
+  // 1) Preferred path: parse proper JSON. For json_object mode, unwrap items/translations/etc.
+  try{
+    const parsed=JSON.parse(s);
+    if(Array.isArray(parsed))return normalizeArray(parsed);
+    if(parsed&&typeof parsed==='object'){
+      const keys=['items','translations','result','output','data','responses'];
+      for(const k of keys){
+        if(Array.isArray(parsed[k]))return normalizeArray(parsed[k]);
+      }
+      const first=Object.values(parsed).find(v=>Array.isArray(v));
+      if(first)return normalizeArray(first);
+      throw new Error('JSON object has no array field');
+    }
+  }catch(_){/* fall through to safe extraction */}
+
+  // 2) Safe fallback: extract only a known array field from an object.
+  // Do NOT regex-scan all quoted strings in the whole JSON, because that captures the key "items".
+  const field=s.match(/"(?:items|translations|result|output|data|responses)"\s*:\s*(\[[\s\S]*?\])\s*(?:[,}])/);
+  if(field){
+    try{return normalizeArray(JSON.parse(field[1].replace(/,\s*([\]}])/g,'$1')));}catch(_){/* continue */}
+  }
+
+  // 3) Last fallback: extract the first bracket-balanced array only.
   const start=s.indexOf('[');
   if(start!==-1){
-    let depth=0,end=-1;
+    let depth=0,end=-1,inStr=false,esc=false;
     for(let i=start;i<s.length;i++){
-      if(s[i]==='[')depth++;
-      else if(s[i]===']'){depth--;if(depth===0){end=i;break;}}
+      const ch=s[i];
+      if(inStr){
+        if(esc)esc=false;
+        else if(ch==='\\')esc=true;
+        else if(ch==='"')inStr=false;
+      }else{
+        if(ch==='"')inStr=true;
+        else if(ch==='[')depth++;
+        else if(ch===']'){
+          depth--;
+          if(depth===0){end=i;break;}
+        }
+      }
     }
-    if(end>start)s=s.slice(start,end+1);
+    if(end>start){
+      const arrText=s.slice(start,end+1).replace(/,\s*([\]}])/g,'$1');
+      try{return normalizeArray(JSON.parse(arrText));}catch(_){/* continue */}
+    }
   }
 
-  s=s.replace(/,\s*([\]}])/g,'$1');
-  try{const arr=JSON.parse(s);if(Array.isArray(arr))return arr;}catch(_){}
-  try{const arr=JSON.parse(s.replace(/[\r\n]+/g,' '));if(Array.isArray(arr))return arr;}catch(_){}
-  const matches=[...s.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map(m=>{
-    try{return JSON.parse('"'+m[1]+'"');}catch{return m[1];}
-  });
-  if(matches.length>0){
-    while(matches.length<expectedLen)matches.push('');
-    return matches.slice(0,expectedLen);
-  }
-  throw new Error('JSON repair failed: '+raw.slice(0,120));
+  throw new Error('Cannot repair JSON safely: '+s.slice(0,120));
 }
 
 /* ══════════════════════════════════════════
@@ -2226,27 +2538,28 @@ function renderTable(){
     if(dupIdx.has(i)&&!isStale)qaFlags.push('♊');
     const qaHtml=qaFlags.length?`<span class="tag t-qa">${qaFlags.join(' ')}</span>`:'';
     // Stale: show old translation dimmed với strikethrough hint
-    const rawDisp=r.ar
-      ?(isStale?`<span style="text-decoration:line-through;opacity:.6;">${esc(r.ar)}</span>`:esc(r.ar))
+    const rawDisp=r.tgt
+      ?(isStale?`<span style="text-decoration:line-through;opacity:.6;">${esc(r.tgt)}</span>`:esc(r.tgt))
       :'—';
     const ppDisp=r.pp
       ?(isStale?`<span style="text-decoration:line-through;opacity:.6;">${esc(r.pp)}</span>`
         :esc(r.pp))
-      :(r.ar&&!isStale?'<span style="color:var(--text3);font-size:10px;">= raw</span>':'—');
+      :(r.tgt&&!isStale?'<span style="color:var(--text3);font-size:10px;">= raw</span>':'—');
     return`<tr class="${isStale?'stale-row':''}">
       <td class="n-c">${i+1}</td>
       <td class="en-c">${esc(r.en)}</td>
-      <td id="raw-${i}" class="${r.ar?'tgt-c':'tgt-e'}" style="${tgtStyle}${tgtFont}">${rawDisp}</td>
+      <td id="raw-${i}" class="${r.tgt?'tgt-c':'tgt-e'}" style="${tgtStyle}${tgtFont}">${rawDisp}</td>
       <td id="pp-${i}" class="${r.pp?'pp-c':'tgt-e'}" style="${tgtStyle}${tgtFont}">${ppDisp}</td>
-      <td class="s-c" id="s-${i}">${sIcon(r.status)}</td>
+      <td class="s-c" id="s-${i}">${sIcon(r.status,r._tmScore)}</td>
       <td class="m-c" id="m-${i}">${typeTag(r._type||detectType(r.en))}</td>
       <td class="qa-c">${qaHtml}</td>
     </tr>`;
   }).join('');
   updateSum();
 }
-function sIcon(s){
+function sIcon(s,tmScore){
   if(s==='done'||s==='cached')return'<span class="tag t-ok">✓</span>';
+  if(s==='tm')return`<span class="tag t-ca" title="Fuzzy TM ${Math.round((tmScore||0)*100)}%">TM ${Math.round((tmScore||0)*100)}%</span>`;
   if(s==='error')return'<span class="tag t-er">!</span>';
   if(s==='stale')return'<span class="tag t-stale" title="Glossary thay đổi — cần dịch lại">↻</span>';
   return'<span class="tag t-wt">·</span>';
@@ -2274,9 +2587,11 @@ function updateSum(){
 function updateStats(){
   const done=rows.filter(r=>r.status==='done'||r.status==='cached').length;
   const cached=rows.filter(r=>r.mode==='cache').length;
+  const tmHits=rows.filter(r=>r.mode==='tm').length;
   const qaWarn=rows.filter(r=>r.pp&&runQA(r.pp,currentLang,r.en,r._type||detectType(r.en)).length>0).length;
   document.getElementById('sv-done').textContent=done;
   document.getElementById('sv-cache').textContent=cached;
+  document.getElementById('sv-tm').textContent=tmHits;
   document.getElementById('sv-pp').textContent=ppCount;
   document.getElementById('sv-calls').textContent=apiCallCount;
   document.getElementById('sv-qa').textContent=qaWarn;
@@ -2429,7 +2744,7 @@ function clearLog(){logEntries.length=0;document.getElementById('log-body').inne
 ══════════════════════════════════════════ */
 const CP_KEY='weapon_tool_v7_cp';
 function saveCP(){
-  try{localStorage.setItem(CP_KEY,JSON.stringify({file:currentFilename,lang:currentLang,n:rows.length,ts:Date.now(),rows:rows.map(r=>({en:r.en,ar:r.ar,pp:r.pp,status:r.status,mode:r.mode}))}));}catch(_){}
+  try{localStorage.setItem(CP_KEY,JSON.stringify({file:currentFilename,lang:currentLang,n:rows.length,ts:Date.now(),rows:rows.map(r=>({en:r.en,tgt:r.tgt,pp:r.pp,status:r.status,mode:r.mode,_tmScore:r._tmScore}))}));}catch(_){}
 }
 function loadCP(file,n){
   try{const raw=localStorage.getItem(CP_KEY);if(!raw)return null;const cp=JSON.parse(raw);if(cp.file===file&&cp.n===n)return cp;}catch(_){}return null;
@@ -2473,24 +2788,25 @@ function processExcel(file){
     const cp=loadCP(file.name,rows.length);
     if(cp){const done=cp.rows.filter(r=>r.status==='done'||r.status==='cached').length;
       if(done>0&&confirm('Tìm thấy '+done+'/'+cp.rows.length+' dòng đã dịch. Tiếp tục không?')){
-        cp.rows.forEach((s,i)=>{if(i<rows.length&&(s.status==='done'||s.status==='cached')){rows[i].ar=s.ar;rows[i].pp=s.pp;rows[i].status=s.status;rows[i].mode=s.mode;}});
+        cp.rows.forEach((s,i)=>{if(i<rows.length&&(s.status==='done'||s.status==='cached')){rows[i].tgt=s.tgt||s.ar;rows[i].pp=s.pp;rows[i].status=s.status;rows[i].mode=s.mode;}});
         renderTable();updateStats();document.getElementById('exp-btn').style.display='inline-block';
       }
     }
   };
   r.readAsArrayBuffer(file);
 }
-function buildRows(dr){rows=dr.map(r=>({en:String(r[colIdx]||'').trim(),ar:'',pp:'',status:'pending',mode:'?'})).filter(r=>r.en);}
+function buildRows(dr){rows=dr.map(r=>({en:String(r[colIdx]||'').trim(),tgt:'',pp:'',status:'pending',mode:'?'})).filter(r=>r.en);}
 function reloadCol(){
   colIdx=parseInt(document.getElementById('colsel').value);if(!wb)return;
   const ws=wb.Sheets[wsName];
   buildRows(XLSX.utils.sheet_to_json(ws,{header:1,defval:''}).slice(1).filter(r=>r.some(c=>String(c).trim())));
-  rows.forEach(r=>{r.ar='';r.pp='';r.status='pending';r.mode='?';});
+  rows.forEach(r=>{r.tgt='';r.pp='';r.status='pending';r.mode='?';});
   renderTable();updateCostEstimate();
 }
 function clearFile(){
   rows=[];wb=null;wsName=null;headers=[];colIdx=0;ppCount=0;_globalStyleLock=null;
   cache.clear();
+  TM.clear(); tmHitCount=0; // reset TM — tránh cross-file fuzzy match từ session cũ
   try{localStorage.removeItem(CP_KEY);}catch(_){}
   document.getElementById('dropzone').classList.remove('got');
   document.getElementById('drop-t').textContent='Kéo thả Excel / CSV hoặc nhấn để chọn';
@@ -2532,9 +2848,11 @@ async function translateAll(){
       const allPending=rows.filter(r=>r.status==='pending'||r.status==='stale');
       const src=allPending.map(r=>r.en).join(' ');
       // Use language-appropriate detect for auto mode
+      // TR: set null so turkishPronounNormalize() and mkPrompt() use per-row/per-batch detection
       if(currentLang==='ar') _globalStyleLock=detectStyleAR(src);
       else if(currentLang==='ko') _globalStyleLock=detectStyleKO(src);
-      else if(currentLang==='tr') _globalStyleLock=detectStyleTR(src);
+      else if(currentLang==='tr') _globalStyleLock=null; // per-row: detectStyleTR() called per row/batch
+      else if(currentLang==='km') _globalStyleLock=detectStyleKM(src);
       else _globalStyleLock=detectStyle(src); // vi: formal/normal
     }
   }
@@ -2551,14 +2869,25 @@ async function translateAll(){
     rows.forEach(r=>{
       const type=detectType(r.en);r._type=type;
       const k=cacheKey(r.en,type);
-      if(r.status==='pending'&&cache.has(k)){
+      if(r.status==='pending'&&!r._forceApi&&cache.has(k)){
         const cached=cache.get(k);
-        r.ar=cached.ar;r.pp=cached.pp;r.status='cached';r.mode='cache';
+        r.tgt=cached.tgt;r.pp=cached.pp;r.status='cached';r.mode='cache';
       }
     });
   }
+  // STEP 2b: Fuzzy TM pass — runs after exact cache, before API
+  tmHitCount=0;
+  rows.forEach(r=>{
+    if(r.status!=='pending'||r._forceApi)return;
+    const type=r._type||detectType(r.en);
+    const hit=tmLookup(r.en,currentLang,type);
+    if(!hit)return;
+    r.tgt=hit.tgt;r.pp=hit.pp;
+    r.status='cached';r.mode='tm';r._tmScore=hit.match;
+    tmHitCount++;
+  });
   // Gộp stale vào pending để dịch lại
-  rows.forEach(r=>{if(r.status==='stale'){r.status='pending';r.ar='';r.pp='';}});
+  rows.forEach(r=>{if(r.status==='stale'){r.status='pending';r.tgt='';r.pp='';r._forceApi=true;}});
 
   const pending=rows.filter(r=>r.status==='pending');
   if(!pending.length){
@@ -2597,15 +2926,19 @@ async function translateAll(){
     const onWait=msg=>{st.innerHTML=`<span class="blink">⏳ ${msg}</span>`;};
 
     const callAPI=async(overrideSys)=>{
+      // response_format json_object: ép model trả JSON sạch, bỏ qua với model không hỗ trợ
+      const supportsJsonMode=!mainMdl.startsWith('gpt-5'); // gpt-5 dùng structured output khác
+      const body={
+        model:mainMdl,
+        max_tokens:Math.min(16000,Math.max(512,lines.reduce((s,l)=>s+Math.ceil(l.length/2),0)+300)),
+        temperature:0.15,
+        messages:[{role:'system',content:overrideSys||sys},{role:'user',content:user}],
+        ...(supportsJsonMode?{response_format:{type:'json_object'}}:{})
+      };
       const res=await apiFetch('https://api.openai.com/v1/chat/completions',{
         method:'POST',
         headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
-        body:JSON.stringify({
-          model:mainMdl,
-          max_tokens:Math.min(16000,Math.max(512,lines.reduce((s,l)=>s+Math.ceil(l.length/2),0)+300)),
-          temperature:0.15,
-          messages:[{role:'system',content:overrideSys||sys},{role:'user',content:user}]
-        })
+        body:JSON.stringify(body)
       },onWait);
       const data=await res.json();
       if(data.error){throw new Error('['+data.error.code+'] '+data.error.message);}
@@ -2620,12 +2953,14 @@ async function translateAll(){
         try{arr=repairJSON(raw,lines.length);}
         catch(parseErr){
           logError(b,'json','repairJSON failed, retrying: '+parseErr.message);
-          raw=await callAPI('Output ONLY a valid JSON array of exactly '+lines.length+' '+prof.name+' strings.');
+          raw=await callAPI('Output ONLY a JSON object {"items":["str1","str2",...]} with exactly '+lines.length+' '+prof.name+' strings in the items array.');
           arr=repairJSON(raw,lines.length);
         }
 
         // Strip [N] prefix LLM may echo back
         arr=arr.map(s=>String(s||'').replace(/^\[\d+\]\s*/,'').trim());
+        if(arr[0]==='items'){throw new Error('Parser guard: object key items leaked into translations');}
+        if(arr.length!==lines.length){throw new Error('Output count mismatch: got '+arr.length+', expected '+lines.length);}
 
         // ── RESTORE TOKENS ──────────────────────────────────────────────
         arr=arr.map((out,idx)=>{
@@ -2674,12 +3009,13 @@ async function translateAll(){
           if(changed)ppCount++;
         }
 
-        rows[ri].ar=llmOut;
+        rows[ri].tgt=llmOut;
         rows[ri].pp=ppOut;
         rows[ri].status='done';
         rows[ri].mode=rowType; // show type in Mode column
         rows[ri]._type=rowType;
-        cache.set(cacheKey(r.en,rowType),{ar:llmOut,pp:ppOut});
+        cache.set(cacheKey(r.en,rowType),{tgt:llmOut,pp:ppOut});
+        tmStore(r.en,llmOut,ppOut,currentLang,rowType); // feed TM
 
         // Update cells live
         const rawCell=document.getElementById('raw-'+ri);
@@ -2741,7 +3077,7 @@ async function retryErrors(){rows.forEach(r=>{if(r.status==='error')r.status='pe
 function exportExcel(){
   const prof=LANG_PROFILES[currentLang];
   const wbOut=XLSX.utils.book_new();
-  const data=[['English','LLM Raw','Post-Processed ('+prof.viName+')'],...rows.map(r=>[r.en,r.ar,r.pp||r.ar])];
+  const data=[['English','LLM Raw','Post-Processed ('+prof.viName+')'],...rows.map(r=>[r.en,r.tgt,r.pp||r.tgt])];
   const ws=XLSX.utils.aoa_to_sheet(data);
   ws['!cols']=[{wch:50},{wch:40},{wch:40}];
   XLSX.utils.book_append_sheet(wbOut,ws,'Translated');
@@ -2770,14 +3106,20 @@ async function loadGlossFromRepo(){
     if(!res.ok)return;
     const data=await res.json();
     let loaded=0;
-    ['vi','ar','ko'].forEach(lang=>{
-      if(Array.isArray(data[lang])&&data[lang].length){
-        customGlossByLang[lang]=data[lang];
-        loaded+=data[lang].length;
+    ['vi','ar','ko','tr','km'].forEach(lang=>{
+      const incoming=normalizeGlossArray(data[lang]||[],lang);
+      if(incoming.length){
+        // Merge repo glossary over embedded/current, but never keep legacy blank target fields
+        ensureGlossLoaded(lang);
+        const map=new Map();
+        (customGlossByLang[lang]||[]).forEach(g=>{if(g.en&&g.tgt)map.set(g.en.toLowerCase(),{en:g.en,tgt:g.tgt});});
+        incoming.forEach(g=>{map.set(g.en.toLowerCase(),{en:g.en,tgt:g.tgt});});
+        customGlossByLang[lang]=Array.from(map.values());
+        loaded+=incoming.length;
       }
     });
     if(loaded){renderGloss();updateCostEstimate();}
-  }catch(_){}
+  }catch(_){/* offline or repo unavailable: keep embedded glossary */}
 }
 
 // Push glossary.json lên repo
@@ -2795,13 +3137,13 @@ async function pushGloss(){
   try{
     // Build payload
     const payload={};
-    ['vi','ar','ko'].forEach(lang=>{
+    ['vi','ar','ko','tr','km'].forEach(lang=>{
       const emb=EMBEDDED_GLOSS_BY_LANG[lang]||[];
       const custom=customGlossByLang[lang]||[];
       const map={};
-      emb.forEach(g=>{map[g.en]=g.ar;});
-      custom.forEach(g=>{map[g.en]=g.ar;});
-      payload[lang]=Object.entries(map).map(([en,ar])=>({en,ar}));
+      emb.forEach(g=>{map[g.en]=g.tgt;});
+      custom.forEach(g=>{map[g.en]=g.tgt;});
+      payload[lang]=Object.entries(map).map(([en,tgt])=>({en,tgt}));
     });
 
     const hdrs={'Authorization':'token '+token,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json','User-Agent':'weapon-tool'};
@@ -2830,9 +3172,9 @@ async function pushGloss(){
 
 // Load glossary nhúng sẵn (nếu file đã được lưu với glossary)
 // Load embedded glossary per lang
-['vi','ar','ko'].forEach(lang=>{
+['vi','ar','ko','tr','km'].forEach(lang=>{
   const emb=EMBEDDED_GLOSS_BY_LANG[lang]||[];
-  if(emb.length>0) customGlossByLang[lang]=[...emb];
+  if(emb.length>0) customGlossByLang[lang]=normalizeGlossArray(emb,lang).map(g=>({en:g.en,tgt:g.tgt}));
 });
 // Restore token từ localStorage (ẩn, không hiện ra UI)
 const _t=localStorage.getItem('gh_tok');
