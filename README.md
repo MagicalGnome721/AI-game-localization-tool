@@ -1,18 +1,20 @@
-# Weapon Naming Tool
+# AI Game Localization Toolkit
 
-A browser-based localization and translation helper for game text, item names, weapon names, NPC dialogue, system messages, and glossary-controlled terminology.
+A browser-based tool for translating and localizing game text with AI, glossary control, QA checks, cache, and Excel/CSV workflow support.
 
 Live Demo: https://magicalgnome721.github.io/weapon-naming-tool/index_v8_prompt_v4.html
 
 ## About
 
-Weapon Naming Tool is a single-page HTML tool designed for internal game localization workflows. It helps translate Excel or CSV text using OpenAI models while keeping terminology, style, placeholders, tags, and formatting under control.
+AI Game Localization Toolkit is a single-page HTML tool designed for internal game localization workflows.
 
-The tool supports multiple target languages, including Vietnamese, Arabic, Korean, Turkish, and Khmer. It is especially useful for fantasy, RPG, MMO, wuxia, and game UI text where consistent terminology matters.
+It helps translate game text from Excel or CSV files using OpenAI models while keeping terminology, style, placeholders, tags, and formatting under control.
 
-## Main Features
+The tool is useful for RPG, MMO, fantasy, wuxia, UI text, item names, NPC dialogue, system messages, quests, and game-related terminology.
 
-Custom system prompts for different content types:
+## Features
+
+Custom prompts for different content types:
 
 - Weapon and item names
 - NPC dialogue
@@ -21,10 +23,11 @@ Custom system prompts for different content types:
 
 Glossary control:
 
-- Add custom glossary terms directly in the browser
+- Add custom glossary terms in the browser
 - Force English terms into preferred target translations
-- Save glossary into the HTML file
 - Import and export glossary JSON
+- Save glossary into the HTML file
+- Push glossary updates to the repository
 - Re-translate rows affected by glossary changes
 
 Translation workflow:
@@ -32,7 +35,7 @@ Translation workflow:
 - Import Excel or CSV files
 - Select the source column
 - Translate in batches
-- Use cache to avoid translating repeated lines
+- Use cache to skip already translated lines
 - Use fuzzy translation memory for similar lines
 - Export translated results back to Excel
 
@@ -43,6 +46,7 @@ Quality checks:
 - Multi-segment separator preservation using `|`
 - Short output warnings
 - Duplicate output warnings
+- Basic style and terminology checks
 
 ## Supported Languages
 
@@ -71,7 +75,7 @@ Then:
 
 ## Glossary Notes
 
-Glossary terms should be used for fixed terminology such as item names, titles, places, factions, skills, and game-specific terms.
+Glossary terms are best used for fixed terminology such as item names, titles, places, factions, skills, NPC roles, and game-specific terms.
 
 Examples:
 
