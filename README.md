@@ -1,16 +1,16 @@
-# AI Game Localization Toolkit
+# AI Game Localization Tool
 
-A browser-based tool for translating and localizing game text with AI, glossary control, QA checks, cache, and Excel/CSV workflow support.
+A browser-based tool for translating and localizing game text with AI, glossary control, QA checks, cache, translation memory, and Excel/CSV workflow support.
 
-Live Demo: https://magicalgnome721.github.io/weapon-naming-tool/index_v8_prompt_v4.html
+Live Demo: https://magicalgnome721.github.io/AI-game-localization-tool/index_v8_prompt_v4.html
 
 ## About
 
-AI Game Localization Toolkit is a single-page HTML tool designed for internal game localization workflows.
+AI Game Localization Tool is a single-page HTML tool designed for game localization workflows.
 
 It helps translate game text from Excel or CSV files using OpenAI models while keeping terminology, style, placeholders, tags, and formatting under control.
 
-The tool is useful for RPG, MMO, fantasy, wuxia, UI text, item names, NPC dialogue, system messages, quests, and game-related terminology.
+The tool is useful for RPG, MMO, fantasy, wuxia, UI text, item names, weapon names, NPC dialogue, system messages, quests, and game-specific terminology.
 
 ## Features
 
@@ -23,7 +23,7 @@ Custom prompts for different content types:
 
 Glossary control:
 
-- Add custom glossary terms in the browser
+- Add custom glossary terms directly in the browser
 - Force English terms into preferred target translations
 - Import and export glossary JSON
 - Save glossary into the HTML file
@@ -60,7 +60,7 @@ Quality checks:
 
 Open the live demo in your browser:
 
-https://magicalgnome721.github.io/weapon-naming-tool/index_v8_prompt_v4.html
+https://magicalgnome721.github.io/AI-game-localization-tool/index_v8_prompt_v4.html
 
 Then:
 
