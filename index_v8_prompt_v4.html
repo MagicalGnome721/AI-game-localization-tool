@@ -1,7 +1,7 @@
 <html lang="vi"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>AI Game Localization Tool v8 — VI · AR · KO · TR · KM</title>
+<title>AI Game Localization Tool v8 — VI · AR · KO · TR · KM · DE</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Khmer:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -202,6 +202,7 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
       <button class="lang-tab" onclick="setLang('ko')">🇰🇷 Hàn Quốc</button>
       <button class="lang-tab" onclick="setLang('tr')">🇹🇷 Thổ Nhĩ Kỳ</button>
       <button class="lang-tab" onclick="setLang('km')">🇰🇭 Khmer</button>
+      <button class="lang-tab" onclick="setLang('de')">🇩🇪 Tiếng Đức</button>
     </div>
     <div id="lang-status" style="font-size:11px;color:var(--s-tx);">✓ Đã load: prompt Vietnamese · 50 glossary terms · post-process rules</div>
   </div>
@@ -314,9 +315,9 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
           <div class="sc-t">PHONG CÁCH (áp cố định toàn bộ)</div>
           <select id="style-lock" style="width:100%;font-size:12px;padding:4px 8px;">
             <option value="auto">Auto — tự phát hiện</option>
-            <option value="casual">Hiện đại (VI: tôi/bạn · KO: 너/나 · AR: أنت/أنا · TR: sen/ben · KM: ខ្ញុំ/អ្នក)</option>
-            <option value="normal">Cổ phong (VI: ta/ngươi · KO: 당신/저 · AR: أنت/أنا · TR: sen/ben · KM: ខ្ញុំ/លោក)</option>
-            <option value="formal">Trang trọng (VI: ta/ngài · KO: 각하/본인 · AR: سيادتك · TR: siz/efendi · KM: ខ្ញុំ/ព្រះអង្គ)</option>
+            <option value="casual">Hiện đại (VI: tôi/bạn · KO: 너/나 · AR: أنت/أنا · TR: sen/ben · KM: ខ្ញុំ/អ្នក · DE: du/dich)</option>
+            <option value="normal">Cổ phong (VI: ta/ngươi · KO: 당신/저 · AR: أنت/أنا · TR: sen/ben · KM: ខ្ញុំ/លោក · DE: Ihr/Euch)</option>
+            <option value="formal">Trang trọng (VI: ta/ngài · KO: 각하/본인 · AR: سيادتك · TR: siz/efendi · KM: ខ្ញុំ/ព្រះអង្គ · DE: Ihr/Euch/Euer)</option>
           </select>
         </div>
         <div class="sc">
@@ -874,7 +875,7 @@ function joinWithEnter(parts) { return parts.join('<enter>'); }
 /* ══════════════════════════════════════════
    GLOBAL STATE
 ══════════════════════════════════════════ */
-let rows=[],customGlossByLang={vi:[],ar:[],ko:[],tr:[],km:[]},cache=new Map(),wb=null,wsName=null,headers=[],colIdx=0,currentFilename='';
+let rows=[],customGlossByLang={vi:[],ar:[],ko:[],tr:[],km:[],de:[]},cache=new Map(),wb=null,wsName=null,headers=[],colIdx=0,currentFilename='';
 
 function getLangGloss(){return customGlossByLang[currentLang]||(customGlossByLang[currentLang]=[]);}
 function normalizeGlossEntry(g, lang=currentLang){
@@ -886,7 +887,7 @@ function normalizeGlossEntry(g, lang=currentLang){
   }
   if(typeof g==='string')return null;
   const en=String(g.en||g.key||g.source||g.term||'').trim();
-  const val=g.tgt ?? g[lang] ?? g.vi ?? g.value ?? g.translation ?? g.target ?? g.ar ?? g.ko ?? g.tr ?? g.km ?? '';
+  const val=g.tgt ?? g[lang] ?? g.vi ?? g.value ?? g.translation ?? g.target ?? g.ar ?? g.ko ?? g.tr ?? g.km ?? g.de ?? '';
   const tgt=String(val||'').trim();
   return en&&tgt?{en,tgt}:null;
 }
@@ -899,7 +900,7 @@ function normalizeGlossArray(arr, lang=currentLang){
 function ensureGlossLoaded(lang=currentLang){
   // Embedded glossary là glossary đã lưu vào HTML. Khi mở file hoặc đổi ngôn ngữ,
   // copy nó vào bảng Glossary Tùy Chỉnh nếu bảng đang trống để user nhìn thấy và sửa được.
-  if(!customGlossByLang)customGlossByLang={vi:[],ar:[],ko:[],tr:[],km:[]};
+  if(!customGlossByLang)customGlossByLang={vi:[],ar:[],ko:[],tr:[],km:[],de:[]};
   customGlossByLang[lang]=normalizeGlossArray(customGlossByLang[lang]||[],lang);
   const emb=normalizeGlossArray(EMBEDDED_GLOSS_BY_LANG[lang]||[],lang);
   if(!customGlossByLang[lang].length && emb.length){
@@ -915,7 +916,7 @@ let currentLang='vi';
    Khi mở file, glossary sẽ tự load vào công cụ.
    KHÔNG chỉnh tay — dùng nút trong UI.
 ─────────────────────────────────────────────────────────────────── */
-const EMBEDDED_GLOSS_BY_LANG = {"vi":[{"en":"Dark Goddess Palace","tgt":"Hắc Ám Nữ Thần Cung"},{"en":"Guild Master","tgt":"Bang Chủ"},{"en":"Dragon Soul Forbidden Land Ticket","tgt":"Long Hồn Cấm Địa Lệnh"},{"en":"Stable Master","tgt":"Trại Chủ"},{"en":"Silk Road","tgt":"Con Đường Tơ Lụa"}],"ar":[],"ko":[],"tr":[],"km":[]}; /* __GLOSS_DATA__ */
+const EMBEDDED_GLOSS_BY_LANG = {"vi":[{"en":"Dark Goddess Palace","tgt":"Hắc Ám Nữ Thần Cung"},{"en":"Guild Master","tgt":"Bang Chủ"},{"en":"Dragon Soul Forbidden Land Ticket","tgt":"Long Hồn Cấm Địa Lệnh"},{"en":"Stable Master","tgt":"Trại Chủ"},{"en":"Silk Road","tgt":"Con Đường Tơ Lụa"}],"ar":[],"ko":[],"tr":[],"km":[],"de":[]}; /* __GLOSS_DATA__ */
 
 /* ══════════════════════════════════════════
    KNOWN TYPOS (Phase 1 — input cleaning)
@@ -1410,6 +1411,103 @@ Return ONLY a JSON array, same length as input. No explanation.`,
     },
   },
 
+  de: {
+    name:'German', viName:'Tiếng Đức', flag:'🇩🇪',
+    rtl:false, font:'sans', tokRatio:1.20,
+    get systemPrompt(){return this.prompts.weapon;},
+    prompts:{
+      weapon:
+`Translate each English weapon/item name into epic German for a fantasy MMO.
+- Use compound nouns (Komposita) — the German way: combine elements without spaces
+- Max 2–3 compound words. Structure: [Attribut]+[Element]+[Waffentyp]
+- Capitalize all nouns (mandatory in German)
+- Weapon LOCK: Sword→Schwert|Blade→Klinge|Spear→Speer|Lance→Lanze|Pike→Pike|Glaive→Gleve|Halberd→Hellebarde|Polearm→Stangenwaffe|Bow→Bogen|Crescent→Mondsichel
+- Use genitive compounds: Dragon+Blade→Drachenschwert | Blood+Spear→Blutspeer | Fire+Sword→Feuerschwert
+- TERMINOLOGY TREE: Same root → same prefix across ALL items. Spirit=Seelen (ALWAYS — NEVER Geist for weapon context). Soul=Seelen|Ghost=Geist|Spirit=Seelen
+Examples: Evil Flame Spear→Teufelsflammenspeer | Dragon Blade→Drachenschwert | Hellfire Devil Sword→Höllenfeuerschwert | Spirit Sword→Seelenklinge
+Return ONLY a JSON array, same length as input. No explanation.`,
+
+      dialogue:
+`Translate each NPC dialogue line into natural German for a fantasy MMO.
+- Keep full meaning, natural and immersive
+- Medieval/fantasy flavor — slightly formal but still approachable
+- PRONOUNS: Follow the PRONOUN RULE injected at the end of this prompt EXACTLY — it overrides everything here
+  · "sir/lord/ambassador/excellency" → Herr | Mylord | Euer Gnaden
+  · "we/us/our" → wir/uns/unser (ALWAYS — never ich for plural)
+- Preserve placeholders (%s %d {0}) exactly
+- Keep pipe separator | between parts if present
+Examples:
+  Hello, where do you want to go? → Guten Tag, wohin möchtet Ihr reisen?
+  Hello sir, can you give me advice? → Guten Tag, Herr, könntet Ihr mir einen Rat geben?
+  We always study the worst case first. → Wir untersuchen stets zuerst den schlimmsten Fall.
+Return ONLY a JSON array, same length as input. No explanation.`,
+
+      system:
+`Translate each UI/system message into clear Modern German.
+- Clear and concise
+- Keep placeholders EXACTLY: %s %d {0} {1}
+- No stylistic rewriting — functional language only
+- Use standard gaming terminology in German
+Return ONLY a JSON array, same length as input. No explanation.`,
+
+      multi:
+`Translate each dialogue segment (may contain | separators) into natural German.
+- Translate each part, keep | separator
+- PRONOUNS: Follow the PRONOUN RULE injected at the end of this prompt EXACTLY
+- Keep placeholders exactly
+Return ONLY a JSON array, same length as input. No explanation.`,
+    },
+    glossary:{
+      'Fire':'Feuer','Flame':'Flamme','Hellfire':'Höllenfeuer',
+      'Frost':'Frost','Frozen':'Gefrorene','Blizzard':'Schneesturm','Freezing':'Eisige',
+      'Blood':'Blut','Bloody':'Blut',
+      'Dragon':'Drachen','Snake':'Schlangen','Python':'Pythonschlange','Phoenix':'Phönix',
+      'Girin':'Kilin','Satan':'Teufel',
+      // Spirit-family — MUSS konsistent bleiben
+      'Spirit Stone':'Seelenstein','Spirit Crystal':'Seelenspitzkristall',
+      'Spirit Ore':'Seelenerzstein','Spirit Gem':'Seelenedelstein',
+      'Spirit':'Seelen','Soul':'Seelen','Ghost':'Geist',
+      'Evil':'Teufelshaft','Dark':'Dunkel','Holy':'Heilig','Divine':'Göttlich',
+      'Imperial':'Kaiserlich','Lord':'Herr','Master':'Meister',
+      'General':'General','Reaper':'Sensenmann','Demon':'Dämon',
+      'Sword':'Schwert','Blade':'Klinge','Spear':'Speer','Lance':'Lanze',
+      'Pike':'Pike','Glaive':'Gleve','Halberd':'Hellebarde','Polearm':'Stangenwaffe',
+      'Bow':'Bogen','Crescent':'Mondsichel',
+      'Gold':'Gold','Silver':'Silber','Iron':'Eisen',
+      'Copper':'Kupfer','Bronze':'Bronze','Jade':'Jade',
+      'Moon':'Mond','Heaven':'Himmel','Lightning':'Blitz','Poison':'Gift',
+      'Storm':'Sturm','Break':'Brecher',
+      // Gameplay / progression terms
+      'Trial':'Prüfung','Challenge':'Herausforderung','Test':'Test',
+      'Reward':'Belohnung','Artifact':'Artefakt','Relic':'Relikt',
+      'Essence':'Essenz','Crystal':'Kristall','Ore':'Erz','Gem':'Edelstein',
+      'Cultivation':'Kultivierung','Realm':'Reich','Sect':'Sekte','Clan':'Klan',
+      'Guild':'Gilde','Sage':'Weiser','Elder':'Ältester','Warrior':'Krieger',
+    },
+    postProcess:(s)=>{
+      // German: ensure compound nouns have no stray spaces mid-compound
+      // e.g. "Drachen Schwert" → "Drachenschwert" for weapon-type outputs
+      s=s.replace(/\s{2,}/g,' ');
+      // Capitalize first letter (should already be, but safe guard)
+      s=s.charAt(0).toUpperCase()+s.slice(1);
+      return s.trim();
+    },
+    postRules:[
+      'Komposita zusammenschreiben (Drachenschwert, Blutspeer)',
+      'Alle Nomen großschreiben (Pflicht)',
+      'Max 3 Komposita-Elemente (Warnung)',
+      'Spirit/Soul → Seelen- Prefix (konsistent)',
+      'Doppelte Leerzeichen entfernen',
+    ],
+    qaCheck:(s)=>{
+      const flags=[];
+      if(s.split(/\s+/).length>5)flags.push('📏');
+      // ⚠Groß: only meaningful for weapon names (qaCheck is only called for type==='weapon' in runQA)
+      if(/\s[a-zäöü]/.test(s))flags.push('⚠Groß');
+      return flags;
+    },
+  },
+
 };
 
 /* ══════════════════════════════════════════
@@ -1482,7 +1580,7 @@ function setLang(key){
   const prof=LANG_PROFILES[key];
   // Update tabs
   document.querySelectorAll('.lang-tab').forEach((t,i)=>{
-    const keys=['vi','ar','ko','tr','km'];
+    const keys=['vi','ar','ko','tr','km','de'];
     t.classList.toggle('active',keys[i]===key);
   });
   // Update labels
@@ -1721,7 +1819,7 @@ function saveHtmlWithGloss(){
   const html=document.documentElement.outerHTML;
   // Gộp embedded gốc + custom theo từng ngôn ngữ
   const merged={};
-  ['vi','ar','ko','tr','km'].forEach(lang=>{
+  ['vi','ar','ko','tr','km','de'].forEach(lang=>{
     const emb=EMBEDDED_GLOSS_BY_LANG[lang]||[];
     const custom=customGlossByLang[lang]||[];
     const map={};
@@ -1865,11 +1963,25 @@ function importGloss(ev){
       const prof=LANG_PROFILES[currentLang];
       let added=0,updated=0;
       const touched=[];
-      const arr=Array.isArray(d)?d:Object.entries(d).map(([en,tgt])=>({en,tgt}));
+      // Format detection:
+      // 1. Language-bucket {"de":[...],"vi":[...]} → use currentLang bucket if present
+      // 2. Plain array [{en,tgt},{source,target},{en,de},...] → normalizeGlossArray directly
+      // 3. Flat object {"Guild Master":"Gildenmeister"} → convert then normalize
+      let rawArr;
+      if(!Array.isArray(d)&&typeof d==='object'&&d!==null){
+        const _lks=['vi','ar','ko','tr','km','de'];
+        const _hasBucket=_lks.some(k=>Array.isArray(d[k]));
+        if(_hasBucket){
+          rawArr=Array.isArray(d[currentLang])?d[currentLang]:[];
+        } else {
+          rawArr=Object.entries(d).map(([en,tgt])=>({en,tgt}));
+        }
+      } else {
+        rawArr=Array.isArray(d)?d:[];
+      }
+      const arr=normalizeGlossArray(rawArr,currentLang);
       arr.forEach(g=>{
-        const _gt=g.tgt||g.vi||g.value||g.translation||g.ar||'';if(!g.en||!_gt)return;
-        const en=String(g.en).trim(), tgt=String(_gt).trim();
-        if(!en||!tgt)return;
+        const en=g.en, tgt=g.tgt;
         const ex=gloss.find(x=>x.en.toLowerCase()===en.toLowerCase());
         if(ex){ex.tgt=tgt;updated++;}
         else{gloss.push({en,tgt});added++;}
@@ -2386,6 +2498,14 @@ function mkPrompt(lines,type){
         sys+=`\n\nPRONOUN RULE: Casual. Use អ្នក for "you", ខ្ញុំ for "I". Natural casual Khmer. NEVER use ឯង.`;
       } else {
         sys+=`\n\nPRONOUN RULE: Default polite. Use លោក or អ្នក for "you" (NOT ឯង). Use ខ្ញុំ for speaker. Polite fantasy MMO register.`;
+      }
+    }
+    if(currentLang==='de'){
+      const deCasual=_globalStyleLock==='casual';
+      if(deCasual){
+        sys+=`\n\nPRONOUN RULE: Casual mode. Use du/dich/dein for "you/your". Use ich for speaker. Natural friendly German. NEVER use Ihr/Euch/Euer or Sie in this mode.`;
+      } else {
+        sys+=`\n\nPRONOUN RULE (OVERRIDE — fantasy formal German): ALWAYS use Ihr / Euch / Euer when addressing the player ("you/your"). Use ich for speaker. NEVER mix in du, dich, dein, Sie, or Ihnen. Never replace Ihr/Euch/Euer with modern pronouns. Examples: "Wollt Ihr..." | "Ich gebe Euch..." | "Das ist Euer Auftrag." This rule is absolute — it overrides any other pronoun choice above.`;
       }
     }
   }
@@ -3106,7 +3226,7 @@ async function loadGlossFromRepo(){
     if(!res.ok)return;
     const data=await res.json();
     let loaded=0;
-    ['vi','ar','ko','tr','km'].forEach(lang=>{
+    ['vi','ar','ko','tr','km','de'].forEach(lang=>{
       const incoming=normalizeGlossArray(data[lang]||[],lang);
       if(incoming.length){
         // Merge repo glossary over embedded/current, but never keep legacy blank target fields
@@ -3137,7 +3257,7 @@ async function pushGloss(){
   try{
     // Build payload
     const payload={};
-    ['vi','ar','ko','tr','km'].forEach(lang=>{
+    ['vi','ar','ko','tr','km','de'].forEach(lang=>{
       const emb=EMBEDDED_GLOSS_BY_LANG[lang]||[];
       const custom=customGlossByLang[lang]||[];
       const map={};
@@ -3172,7 +3292,7 @@ async function pushGloss(){
 
 // Load glossary nhúng sẵn (nếu file đã được lưu với glossary)
 // Load embedded glossary per lang
-['vi','ar','ko','tr','km'].forEach(lang=>{
+['vi','ar','ko','tr','km','de'].forEach(lang=>{
   const emb=EMBEDDED_GLOSS_BY_LANG[lang]||[];
   if(emb.length>0) customGlossByLang[lang]=normalizeGlossArray(emb,lang).map(g=>({en:g.en,tgt:g.tgt}));
 });
