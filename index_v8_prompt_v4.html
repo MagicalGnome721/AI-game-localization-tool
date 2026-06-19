@@ -497,7 +497,7 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
       </div>
       <div class="tok-item">
         <div class="tok-v" id="est-sys-v">301</div>
-        <div class="tok-l">input — system prompt</div>
+        <div class="tok-l">input — prompt/context</div>
       </div>
       <div class="tok-item" id="gloss-tok-item" style="display: block;">
         <div class="tok-v t-co" id="est-gloss-v">95</div>
@@ -520,7 +520,7 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
           <th class="ra">Output /1M</th>
           <th class="ra">Ước tính input</th>
           <th class="ra">Ước tính output</th>
-          <th class="ra">💰 Tổng ước tính</th>
+          <th class="ra">💰 Khoảng dự phòng</th>
         </tr></thead>
         <tbody id="cost-tbody"><tr class="cur-model">
       <td>GPT-4o mini&nbsp;<span class="tag t-si" style="font-size:9px;">đang dùng</span></td>
@@ -581,8 +581,8 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
     </tr></tbody>
       </table>
     </div>
-    <div class="cost-note">
-      * ~1 token ≈ 3.5 ký tự · Dedup đã trừ duplicate rows · System prompt wuxia/فصحى/MMO được tính đúng · Giá tham khảo 5/2025
+    <div class="cost-note" id="cost-note">
+      * Khoảng dự phòng gồm prompt/context đồng bộ + retry nhẹ. Nếu lỗi JSON/tag nhiều và patch bị chẻ liên tục, chi phí có thể vượt khoảng này. Giá chỉ là tham khảo theo bảng trong tool.
     </div>
   </div>
 </div>
@@ -1705,6 +1705,7 @@ function onDualChange(){
 function onBatchChange(){if(rows.length)updateCostEstimate();}
 function fmtN(n){if(n>=1e6)return(n/1e6).toFixed(2)+'M';if(n>=1000)return(n/1000).toFixed(1)+'k';return String(n);}
 function fmtUSD(n){if(n<0.001)return'$'+n.toFixed(4);if(n<1)return'$'+n.toFixed(3);return'$'+n.toFixed(2);}
+function fmtUSDRange(a,b){return Math.abs(a-b)<0.0000005?fmtUSD(a):(fmtUSD(a)+'–'+fmtUSD(b));}
 function tok(s){return Math.ceil((s||'').length/3.5);}
 const normKey=s=>s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu,'').trim();
 
@@ -2777,21 +2778,30 @@ function updateCostEstimate(){
     const k=normKey(r.en);
     if(seenKeys.has(k)){dedupCount++;}else{seenKeys.add(k);uniqueCount++;}
   });
-  // Only batch unique rows
+
+  // Only unique rows get sent to API
   const uniqueRows=[];
   const seen2=new Set();
   rows.forEach(r=>{const k=normKey(r.en);if(!seen2.has(k)){seen2.add(k);uniqueRows.push(r);}});
   const batches=mkBatches(uniqueRows);
   const numBatches=batches.length;
 
-  // Content tokens (only unique rows get sent)
+  // Content tokens (unique source text only)
   const contentTok=uniqueRows.reduce((s,r)=>s+tok(r.en),0);
 
-  // System prompt overhead per batch (v7 prompts are longer: ~350-500 tok each)
+  // System prompt + JSON wrapper per patch
   const sysPromptTok=tok(prof.systemPrompt);
-  const sysOverhead=numBatches*(sysPromptTok+20); // +20 for JSON wrapper
+  const sysOverhead=numBatches*(sysPromptTok+20);
 
-  // Glossary overhead: only matching terms injected per batch
+  // 42k fixed mode injects semantic sync context per patch.
+  // Estimate it BEFORE translation: fixed rule + up to 10 previous EN=>target pairs, capped like buildSemanticSyncContext().
+  const ctxRuleTok=tok('CONSISTENCY RULE FOR LARGE EXCEL FILES: Keep terminology, names, pronouns, register, tone, and narrative meaning consistent with previous patches. Use the glossary and translation memory as the source of truth.');
+  const avgLineTok=uniqueRows.length?Math.ceil(contentTok/uniqueRows.length):0;
+  const avgTargetTok=Math.ceil(avgLineTok*(prof.tokRatio||1));
+  const ctxPairTok=Math.min(720,ctxRuleTok+(Math.min(10,Math.max(1,Math.ceil(uniqueRows.length/Math.max(1,numBatches))))*(avgLineTok+avgTargetTok+8)));
+  const contextTok=numBatches?Math.max(ctxRuleTok,ctxPairTok)*Math.max(0,numBatches-1)+ctxRuleTok:0;
+
+  // Glossary overhead: only matching terms injected per patch
   const mergedGloss=getActiveMergedGloss();
   let glossTok=0;
   batches.forEach(batch=>{
@@ -2803,10 +2813,25 @@ function updateCostEstimate(){
     });
   });
 
-  // Output tokens
-  const totalIn=contentTok+sysOverhead+glossTok;
+  // Base output tokens
+  const totalIn=contentTok+sysOverhead+contextTok+glossTok;
   const totalOut=Math.round(contentTok*prof.tokRatio);
   const grandTotal=totalIn+totalOut;
+
+  // Cost range for 42k mode:
+  // Low  = clean run estimate.
+  // High = expected production buffer: retry nhẹ + adaptive split + longer target output.
+  // Stress = not shown as main price, only note: nhiều lỗi JSON/tag có thể chạm ngưỡng này.
+  const langRisk={vi:.10,ko:.12,tr:.14,ar:.18,de:.18,km:.28}[currentLang]||.16;
+  const sizeRisk=rows.length>=40000?.18:rows.length>=10000?.12:rows.length>=1000?.07:.03;
+  const batchRisk=numBatches>=500?.16:numBatches>=200?.12:numBatches>=60?.08:numBatches>=10?.05:.02;
+  const retryBuffer=Math.min(.65,langRisk+sizeRisk+batchRisk);
+  const stressBuffer=Math.min(1.25,retryBuffer+.35);
+  const rangeInHigh=Math.round(totalIn*(1+retryBuffer));
+  const rangeOutHigh=Math.round(totalOut*(1+retryBuffer));
+  const stressInHigh=Math.round(totalIn*(1+stressBuffer));
+  const stressOutHigh=Math.round(totalOut*(1+stressBuffer));
+  const grandTotalHigh=rangeInHigh+rangeOutHigh;
 
   // Savings from dedup
   const savedByDedup=dedupCount>0
@@ -2818,7 +2843,7 @@ function updateCostEstimate(){
   document.getElementById('est-unique-v').textContent=uniqueCount+(dedupCount>0?` (−${dedupCount})`:``);
   document.getElementById('est-batches-v').textContent=numBatches;
   document.getElementById('est-in-v').textContent=fmtN(contentTok);
-  document.getElementById('est-sys-v').textContent=fmtN(sysOverhead);
+  document.getElementById('est-sys-v').textContent=fmtN(sysOverhead+contextTok);
   const glossItem=document.getElementById('gloss-tok-item');
   if(glossTok>0){
     document.getElementById('est-gloss-v').textContent=fmtN(glossTok);
@@ -2826,8 +2851,8 @@ function updateCostEstimate(){
   }else{
     glossItem.style.display='none';
   }
-  document.getElementById('est-out-v').textContent=fmtN(totalOut);
-  document.getElementById('est-total-v').textContent=fmtN(grandTotal);
+  document.getElementById('est-out-v').textContent=fmtN(totalOut)+'–'+fmtN(rangeOutHigh);
+  document.getElementById('est-total-v').textContent=fmtN(grandTotal)+'–'+fmtN(grandTotalHigh);
 
   // Model comparison table
   const currentModel=document.getElementById('mdl-main').value;
@@ -2837,6 +2862,8 @@ function updateCostEstimate(){
     const inCost=totalIn/1e6*m.inp;
     const outCost=totalOut/1e6*m.out;
     const total=inCost+outCost;
+    const high=(rangeInHigh/1e6*m.inp)+(rangeOutHigh/1e6*m.out);
+    const stress=(stressInHigh/1e6*m.inp)+(stressOutHigh/1e6*m.out);
     const isCur=m.id===currentModel;
     const isCheapest=Math.abs(total-minCost)<0.000001;
     return`<tr class="${isCur?'cur-model':''}">
@@ -2845,7 +2872,7 @@ function updateCostEstimate(){
       <td class="ra">$${m.out.toFixed(3)}</td>
       <td class="ra" style="color:var(--text3)">${fmtUSD(inCost)}</td>
       <td class="ra" style="color:var(--text3)">${fmtUSD(outCost)}</td>
-      <td class="ra bold">${fmtUSD(total)}</td>
+      <td class="ra bold"><span title="Base → có dự phòng retry/split nhẹ">${fmtUSDRange(total,high)}</span><div style="font-size:9px;color:var(--text3);font-weight:400;">lỗi nặng: ~${fmtUSD(stress)}</div></td>
     </tr>`;
   }).join('');
 
@@ -2853,9 +2880,19 @@ function updateCostEstimate(){
   const curM=MODEL_PRICING.find(m=>m.id===currentModel);
   if(curM){
     const curCost=(totalIn/1e6*curM.inp)+(totalOut/1e6*curM.out);
+    const curHigh=(rangeInHigh/1e6*curM.inp)+(rangeOutHigh/1e6*curM.out);
+    const curStress=(stressInHigh/1e6*curM.inp)+(stressOutHigh/1e6*curM.out);
     const tag=document.getElementById('cost-summary-tag');
-    tag.innerHTML=`~${fmtUSD(curCost)} với ${curM.name}${savedByDedup}`;
+    tag.innerHTML=`~${fmtUSDRange(curCost,curHigh)} với ${curM.name}${savedByDedup}`;
+    tag.title=`Khoảng chính = chạy sạch → retry/split nhẹ. Nếu lỗi nặng có thể khoảng ${fmtUSD(curStress)}.`;
     tag.style.display='inline-flex';tag.style.alignItems='center';tag.style.gap='4px';
+
+    const note=document.getElementById('cost-note');
+    if(note){
+      const pct=Math.round(retryBuffer*100);
+      const stressPct=Math.round(stressBuffer*100);
+      note.innerHTML=`* Khoảng dự phòng = base → +${pct}% buffer cho context đồng bộ, retry nhẹ và adaptive split. Nếu lỗi JSON/tag nhiều, chi phí có thể lên gần mức “lỗi nặng” (+${stressPct}%). Dedup đã trừ duplicate rows. Giá chỉ là tham khảo theo bảng trong tool.`;
+    }
   }
 
   document.getElementById('cost-card').style.display='block';
