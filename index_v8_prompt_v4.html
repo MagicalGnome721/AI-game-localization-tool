@@ -1,7 +1,7 @@
 <html lang="vi"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>AI Game Localization Tool v8 — VI · AR · KO · TR · KM · DE</title>
+<title>AI Game Localization Tool v8.3 — Legacy Cost · VI · AR · KO · TR · KM · DE</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Khmer:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -168,6 +168,12 @@ code{background:var(--bg2);padding:1px 4px;border-radius:3px;font-size:10px;}
 .pp-rules{display:flex;flex-direction:column;gap:4px;}
 .pp-rule{display:flex;align-items:center;gap:8px;font-size:11px;padding:3px 0;}
 .pp-icon{width:16px;text-align:center;flex-shrink:0;}
+
+.worker-status{display:none;gap:6px;flex-wrap:wrap;padding:8px 14px;background:var(--bg);border:.5px solid var(--border);border-radius:var(--rl);font-size:10px;color:var(--text2);}
+.worker-pill{border:.5px solid var(--border);border-radius:4px;padding:3px 7px;background:var(--bg2);}
+.worker-pill.run{color:var(--i-tx);border-color:var(--i-br);background:var(--i-bg);}
+.worker-pill.done{color:var(--s-tx);border-color:var(--s-br);background:var(--s-bg);}
+.worker-pill.wait{color:var(--w-tx);border-color:var(--w-br);background:var(--w-bg);}
 /* TGL */
 .tgl{position:relative;width:36px;height:20px;flex-shrink:0;}
 .tgl input{opacity:0;width:0;height:0;}
@@ -185,7 +191,7 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
 <div class="page">
 
 <header>
-  <h1>AI Game Localization Tool <span style="color:var(--text3);font-weight:400;font-size:13px;">v8 Pro</span></h1>
+  <h1>AI Game Localization Tool <span style="color:var(--text3);font-weight:400;font-size:13px;">v8.3 Pro · Legacy Cost</span></h1>
   <small>Kiến trúc: Typo Fix → Token Protect → Global Glossary → Lang Glossary → Lang Prompt → LLM → Restore Tokens → Post-Process → QA</small>
 </header>
 
@@ -310,6 +316,16 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
             <option value="12000">12 000</option>
             <option value="16000" selected="">16 000 — tối đa</option>
           </select>
+        </div>
+        <div class="sc">
+          <div class="sc-t">LUỒNG SONG SONG</div>
+          <select id="parallel-workers" style="width:100%;font-size:12px;padding:4px 8px;" title="Chạy theo cửa sổ an toàn: giữ thứ tự Excel, checkpoint sạch, giảm rủi ro context loạn.">
+            <option value="1">1 — chuẩn tối đa</option>
+            <option value="2" selected="">2 — cân bằng / khuyến nghị</option>
+            <option value="3">3 — nhanh</option>
+            <option value="4">4 — thử nghiệm</option>
+          </select>
+          <div style="font-size:10px;color:var(--text3);line-height:1.45;margin-top:5px;">Legacy cost: ưu tiên 2 luồng. 3 luồng nếu muốn nhanh hơn; 4 chỉ test ngắn.</div>
         </div>
         <div class="sc">
           <div class="sc-t">PHONG CÁCH (áp cố định toàn bộ)</div>
@@ -590,7 +606,7 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
 <!-- ACTION BAR -->
 <div class="abar" id="abar" style="display: flex;">
   <button class="btn btn-p" id="trans-btn" onclick="translateAll()">Dịch → <span id="btn-lang">🇻🇳 Tiếng Việt</span></button>
-  <button class="btn btn-d" id="stop-btn" style="display: inline-block;" onclick="abortFlag=true;document.getElementById('stop-btn').disabled=true;" disabled="">⏹ Dừng</button>
+  <button class="btn btn-d" id="stop-btn" style="display: inline-block;" onclick="stopTranslate()" disabled="">⏹ Dừng</button>
   <button class="btn btn-s" id="exp-btn" style="display: inline-block;" onclick="exportExcel()">Xuất Excel</button>
   <button class="btn btn-w" id="retry-btn" style="display:none;" onclick="retryErrors()">Thử lại lỗi</button>
   <div class="pw" style="display: block;" id="pw"><div class="pf" id="pf" style="width: 100%;"></div></div>
@@ -606,6 +622,7 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
   <div class="stat"><div class="stat-v" id="sv-save">~0%</div><div class="stat-l">Token tiết kiệm</div></div>
 </div>
 <div id="tst" class="st ok">Cache hit — 0 API calls!</div>
+<div id="worker-status" class="worker-status"></div>
 
 <!-- GLOSS NOTICE — hiện khi có dòng cần dịch lại do glossary thay đổi -->
 <div class="gloss-notice" id="gloss-notice" style="display: none;">
@@ -807,10 +824,16 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
 'use strict';
 /* ══════════════════════════════════════════
    TOKEN PROTECTION — ONE-PASS
-   Model KHÔNG BAO GIỜ thấy: <color=...> </color> <enter> {…} %s
+   General rule: preserve ALL game/code/tag tokens, not a hard-coded list.
+   Protected examples:
+   - HTML/XML-like tags: <color=#44B242>, </color>, <enter>, <br/>
+   - Curly placeholders: {0}, {name}, {player_id}
+   - Percent/code placeholders: %s, %d, %h, %m, %1$s, %dmg, %abc, %hp_01
+   - Square-bracket game tags/codes: [e4a121], [DFDAA3], [-], [b], [/b], [item:123], [QuestName]
+   - Backtick code snippets: `code`
    Flow: protectAll → LLM → restoreAll
 ══════════════════════════════════════════ */
-const TOKEN_REGEX = /<color=[^>]+>|<\/color>|<enter>|\{[^}]+\}|%[sdif]/gi;
+const TOKEN_REGEX = /<[^>\r\n]{1,240}>|\{[^}\r\n]{1,160}\}|%(?:\d+\$)?[A-Za-z][A-Za-z0-9_]*|\[[^\]\r\n]{0,180}\]|`[^`\r\n]{1,180}`/g;
 
 function protectAll(text) {
   const map = [];
@@ -909,6 +932,40 @@ function ensureGlossLoaded(lang=currentLang){
   return customGlossByLang[lang];
 }
 let apiCallCount=0,savedTok=0,totalTok=0,abortFlag=false,ppCount=0;
+let runInputTok=0,runOutputTok=0,runCostUSD=0;
+let activeApiControllers=new Set();
+function getParallelWorkers(){
+  const el=document.getElementById('parallel-workers');
+  return Math.max(1,Math.min(4,parseInt(el&&el.value)||1));
+}
+function stopTranslate(){
+  abortFlag=true;
+  activeApiControllers.forEach(c=>{try{c.abort();}catch(_){}});
+  activeApiControllers.clear();
+  const btn=document.getElementById('stop-btn');
+  if(btn){btn.disabled=true;btn.textContent='Đang dừng…';}
+  const st=document.getElementById('tst');
+  if(st){st.textContent='Đang dừng và hủy request đang chạy…';st.className='st er';}
+}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+function yieldUI(){return new Promise(r=>setTimeout(r,0));}
+function setWorkerPanelVisible(show){
+  const panel=document.getElementById('worker-status');
+  if(panel)panel.style.display=show?'flex':'none';
+}
+function updateWorkerPanel(workerStates){
+  const panel=document.getElementById('worker-status');
+  if(!panel)return;
+  panel.innerHTML=workerStates.map(w=>`<span class="worker-pill ${w.cls||''}">W${w.id}: ${escapeHTML(w.text||'chờ')}</span>`).join('');
+}
+function showRuntimeError(prefix,err){
+  const st=document.getElementById('tst');
+  const msg=(err&&err.message)||String(err||'unknown error');
+  if(st){st.textContent=prefix+': '+msg;st.className='st er';}
+  try{console.error(prefix,err);}catch(_){}
+}
+window.addEventListener('error',e=>showRuntimeError('JS lỗi',e.error||e.message));
+window.addEventListener('unhandledrejection',e=>showRuntimeError('Promise lỗi',e.reason||e));
 let currentLang='vi';
 // 42k-row mode: render table by page so the browser does not freeze.
 let tablePage=0, tablePageSize=300;
@@ -1634,6 +1691,7 @@ function updatePipelineStatus(){
    HELPERS
 ══════════════════════════════════════════ */
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function escapeHTML(s){return esc(s);}
 function toggleSec(id){
   document.getElementById(id+'-panel').classList.toggle('o');
   document.getElementById(id+'-chev').classList.toggle('o');
@@ -1720,7 +1778,7 @@ function detectType(text){
   if(/\b(congratulations|welcome|farewell|good luck|take care)\b/i.test(t))return'dialogue';
   if(/\b(thanks|thank|sorry|please|yes|no|ok|okay|yeah|nope|sure|alright|bye|goodbye|cheers|wow|oh|ah|hmm|oops|excuse)\b/i.test(t))return'dialogue';
   // Thuần system: có placeholder VÀ không có flavor NPC
-  if(/%[sdif]|\{\d+\}/.test(t)&&/[.!?,]/.test(t))return'system';
+  if(/%(?:\d+\$)?[A-Za-z][A-Za-z0-9_]*|\{\d+\}/.test(t)&&/[.!?,]/.test(t))return'system';
   // Weapon: ngắn, không dấu câu, không pronoun
   const words=t.split(/\s+/).filter(Boolean).length;
   if(words<=5&&!/[.!?,]/.test(t)&&!/\b(I|you|your|he|his|she|her|we|our|they|their|my|me)\b/i.test(t))return'weapon';
@@ -1769,8 +1827,11 @@ function renderTypoPanel(){
       <span style="font-size:10px;color:var(--text3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(t.original)}</span>
     </div>`).join('');
 }
-function applyFixes(){
+function fixRowsTyposSilently(){
   detectTypos().forEach(t=>{rows[t.rowIdx].en=rows[t.rowIdx].en.split(t.wrong).join(t.correct);});
+}
+function applyFixes(){
+  fixRowsTyposSilently();
   renderTable();renderTypoPanel();
 }
 
@@ -2125,29 +2186,34 @@ const AR_PROTECT_MAP=[
   ['لوحدك',     '〈AR_ALONE〉'],
 ];
 
+function arEscapeRe(s){ return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+function arReplaceWord(text, from, to){
+  // Replace only standalone Arabic words/phrases, not substrings inside words.
+  // Prevents bugs like: رهانات → رهأنات, مانا → مأنا, الانتباه → الأنتباه.
+  const re=new RegExp('(^|[^\\u0600-\\u06FF])'+arEscapeRe(from)+'(?=$|[^\\u0600-\\u06FF])','g');
+  return text.replace(re, (m,prefix)=>prefix+to);
+}
 function arabicPronounNormalize(text, enOrig){
   // Use globalStyleLock for consistency across entire file; fall back to per-row detect
   const style=(_globalStyleLock==='formal')?'formal':((_globalStyleLock==='normal'||_globalStyleLock==='casual')?'normal':detectStyleAR(enOrig||''));
   // 1. PROTECT
   AR_PROTECT_MAP.forEach(([p,tk])=>{ text=text.split(p).join(tk); });
-  // 2. NORMALIZE
+  // 2. NORMALIZE — word-boundary only, never raw substring replace
   if(style==='normal'){
-    // Replace formal "you" → neutral أنت
+    // Replace formal "you" → neutral أنت, only as standalone words/phrases
     ['سيادتك','حضرتك','فخامتك','معاليك','جنابك','صاحب السمو'].forEach(f=>{
-      text=text.split(f).join('أنت');
+      text=arReplaceWord(text,f,'أنت');
     });
     // Replace humble speaker → neutral أنا
-    text=text.split('أنا عبدك').join('أنا');
-    text=text.split('أنا خادمك').join('أنا');
+    text=arReplaceWord(text,'أنا عبدك','أنا');
+    text=arReplaceWord(text,'أنا خادمك','أنا');
   }
-  // Always: fix colloquial forms → فصحى
-  text=text.split('إنت').join('أنت');
-  text=text.split('انت').join('أنت');
-  text=text.split('انا').join('أنا');
+  // Always: fix colloquial forms → فصحى, standalone only
+  text=arReplaceWord(text,'إنت','أنت');
+  text=arReplaceWord(text,'انت','أنت');
+  text=arReplaceWord(text,'انا','أنا');
   // 3. RESTORE
   AR_PROTECT_MAP.forEach(([p,tk])=>{ text=text.split(tk).join(p); });
-  // 4. HARD-FIX: mixed non-Arabic script (Latin/Vietnamese chars snuck in)
-  // Flag for QA — actual re-translation not possible in post-process
   return text;
 }
 
@@ -2241,6 +2307,35 @@ function khmerPronounNormalize(text, enOrig){
   KM_PROTECT_MAP.forEach(([p,tk])=>{ text=text.split(tk).join(p); });
   return text;
 }
+
+const INTERNAL_TYPE_LABEL_WORDS='WEAPON|DIALOGUE|SYSTEM|MULTI|WPN|DIA|SYS|MIX|WEA|سلاح|أسلحة|حوار|نظام|متعدد|واجهة|رسالة';
+function hasInternalTypeLabel(text){
+  const re=new RegExp('^\\s*(?:\\[\\s*(?:'+INTERNAL_TYPE_LABEL_WORDS+')\\s*\\]\\s*|(?:'+INTERNAL_TYPE_LABEL_WORDS+')\\s*[:：\\-–—]\\s*)','i');
+  return re.test(String(text||''));
+}
+function stripInternalTypeLabels(text,enOrig){
+  let t=String(text||'');
+  const src=String(enOrig||'');
+  // If the original source intentionally starts with an internal label, do not strip it.
+  if(/^\s*\[\s*(?:WEAPON|DIALOGUE|SYSTEM|MULTI)\s*\]/i.test(src)) return t.trim();
+  const re=new RegExp('^\\s*(?:\\[\\s*(?:'+INTERNAL_TYPE_LABEL_WORDS+')\\s*\\]\\s*|(?:'+INTERNAL_TYPE_LABEL_WORDS+')\\s*[:：\\-–—]\\s*)+','i');
+  let prev;
+  do{ prev=t; t=t.replace(re,''); }while(t!==prev);
+  return t.trim();
+}
+function sourceHasFirstPerson(enOrig){
+  return /\b(i|i'm|i’m|i`m|i’ll|i\u2019ll|i will|i have|i've|me|my|mine|we|us|our|ours)\b/i.test(String(enOrig||''));
+}
+function sanitizeLLMOutput(text,langKey,rowType,enOrig){
+  let t=stripInternalTypeLabels(text,enOrig);
+  if(langKey==='ar' && !sourceHasFirstPerson(enOrig)){
+    // Arabic model sometimes prepends "أنا" to achievement/title/UI fragments.
+    // Strip only leading standalone pronoun when the English source has no first-person meaning.
+    t=t.replace(/^\s*(?:أنا|انا)\s+(?=\S)/,'');
+  }
+  t=stripInternalTypeLabels(t,enOrig);
+  return t.trim();
+}
 function applyPostProcess(text,langKey,type,enOrig){
   // 1. Glossary hard enforcement (weapon) / soft enforcement (dialogue)
   if(type==='weapon'){
@@ -2283,7 +2378,7 @@ function runQA(text,langKey,enOrig,type){
   const flags=[];
   if(prof&&prof.qaCheck&&type==='weapon')prof.qaCheck(text).forEach(f=>flags.push(f));
   if(enOrig){
-    const phs=[...enOrig.matchAll(/(%[sdif]|\{[^}]+\})/g)].map(m=>m[0]);
+    const phs=[...enOrig.matchAll(/(%(?:\d+\$)?[A-Za-z][A-Za-z0-9_]*|\{[^}]+\})/g)].map(m=>m[0]);
     phs.filter(ph=>!text.includes(ph)).length&&flags.push('⚠%s');
   }
   if(enOrig&&type==='multi'){
@@ -2292,6 +2387,7 @@ function runQA(text,langKey,enOrig,type){
   }
   if(type==='weapon'&&text.split(/\s+/).length>7)flags.push('📏');
   if(type==='dialogue'&&enOrig&&enOrig.length>40&&text.length<enOrig.length*0.2)flags.push('⚠short');
+  if(hasInternalTypeLabel(text))flags.push('⚠type');
   // Pronoun check: VI dialogue không được dùng "bạn" hoặc "tôi"
   if(langKey==='vi'&&(type==='dialogue'||type==='multi')){
     // Chỉ flag nếu style là formal/normal (không phải casual tôi/bạn)
@@ -2302,6 +2398,8 @@ function runQA(text,langKey,enOrig,type){
   if(enOrig){
     const qi=qaTokenIntegrity(enOrig,text);
     if(!qi.ok)flags.push('⚠tag');
+    const stoks=extractLockedTokens(enOrig), otoks=extractLockedTokens(text);
+    if(stoks.length && (stoks.length!==otoks.length || !stoks.every((t,i)=>t===otoks[i])))flags.push('⚠tokseq');
     if(qi.emptyPairs>0)flags.push('⚠empty');
     // Structural: color tag count mismatch (merge/drop bug)
     const tc=detectTagCorruption(enOrig,text);
@@ -2370,19 +2468,20 @@ function tmLookup(en, lang, type) {
 ══════════════════════════════════════════ */
 function mkBatches(items){
   const budget=parseInt(document.getElementById('batch-tokens').value)||2500;
-  // 42k production mode:
-  // Keep original Excel order for narrative/context consistency, but never mix prompt types in one API call.
-  // This creates many small patches: contiguous same-type chunks, split by token budget.
+  // v8.3 Legacy Cost:
+  // Keep original Excel order and DO NOT split just because row type changes.
+  // Batch larger than v8.2.9 to reduce repeated prompt/context cost, but keep a safe cap for JSON.
+  let maxItems=Math.max(80,Math.min(300,Math.floor(budget/55)));
+  if(currentLang==='ar') maxItems=Math.min(maxItems,220); // cheaper than 100, safer than 300
   const out=[];
-  let cur=[],ct=0,curType=null;
+  let cur=[],ct=0;
   for(const item of items){
     const type=detectType(item.en); item._type=type;
-    // Conservative estimate: target languages like KM/DE/AR may expand or tokenize heavier.
-    const t=Math.max(16,Math.ceil(tok(item.en)*3.2+18));
-    if(cur.length>0 && (curType!==type || ct+t>budget)){
-      out.push(cur);cur=[];ct=0;curType=null;
+    const t=Math.max(12,Math.ceil(tok(item.en)*2.4+12)); // closer to legacy estimate, less over-splitting
+    if(cur.length>0 && (ct+t>budget || cur.length>=maxItems)){
+      out.push(cur);cur=[];ct=0;
     }
-    cur.push(item);ct+=t;curType=type;
+    cur.push(item);ct+=t;
   }
   if(cur.length)out.push(cur);
   return out;
@@ -2449,14 +2548,39 @@ function enforceGlossaryDialogue(text, enOrig){
    Override: "huynh đài" chỉ khi signal friendly rõ ràng
 ══════════════════════════════════════════ */
 
-function mkPrompt(lines,type){
-  type=type||detectType(lines[0]||'');
+function stripPromptContractForMixed(prompt){
+  return String(prompt||'')
+    .replace(/Return ONLY a JSON array[^\n]*(?:\n|$)/gi,'')
+    .replace(/Return ONLY a JSON object[^\n]*(?:\n|$)/gi,'')
+    .replace(/No markdown[^\n]*(?:\n|$)/gi,'')
+    .trim();
+}
+function mkMixedPromptIntro(types){
+  const used=[...new Set(types)].filter(Boolean);
+  let sys='You are translating a large game localization Excel in original row order. This API call may contain mixed row types. Each mixed input item is a compact JSON object {i,t,x}. t is metadata only: w=weapon, d=dialogue, s=system, m=multi. Translate only x according to t. Return ONLY a JSON array of translated strings in the same order. Do NOT include ids, row numbers, type labels, translated type labels, explanations, or markdown.';
+  sys+='\n\nTYPE ROUTING RULES:';
+  sys+='\n- w: weapon/item name; compact fantasy naming.';
+  sys+='\n- d: NPC/story/dialogue; preserve meaning, tone and pronouns.';
+  sys+='\n- s: UI/system message; preserve placeholders exactly.';
+  sys+='\n- m: multiple | segments; preserve exact | count/order.';
+  used.forEach(t=>{
+    const body=stripPromptContractForMixed(getPrompt(currentLang,t));
+    if(body)sys+='\n\n['+t.toUpperCase()+' DETAILED RULES]\n'+body.slice(0,750);
+  });
+  return sys;
+}
+
+function mkPrompt(lines,type,types){
+  types=(types&&types.length===lines.length)?types:lines.map(l=>type||detectType(l||''));
+  const uniqueTypes=[...new Set(types)].filter(Boolean);
+  const mixed=uniqueTypes.length>1;
+  type=mixed?'mixed':(uniqueTypes[0]||type||detectType(lines[0]||''));
   const prof=LANG_PROFILES[currentLang];
   const ag=activeGlossForLines(lines);
-  let sys=getPrompt(currentLang,type);
+  let sys=mixed?mkMixedPromptIntro(types):getPrompt(currentLang,type);
 
   // Inject pronoun rule cho mọi ngôn ngữ
-  if(type==='dialogue'||type==='multi'){
+  if(types.some(t=>t==='dialogue'||t==='multi')){
     const src=lines.join(' ');
     if(currentLang==='vi'){
       const pStyle=_globalStyleLock||detectStyle(src);
@@ -2514,26 +2638,26 @@ function mkPrompt(lines,type){
     }
   }
 
-  if(type!=='system'&&ag.length>0){
-    sys+='\n\nGLOSSARY (MUST enforce exactly):';
+  if((type!=='system'||types.some(t=>t!=='system'))&&ag.length>0){
+    sys+='\n\nGLOSSARY (MUST enforce exactly for non-system rows; for system rows, keep natural UI wording and preserve placeholders):';
     ag.forEach(g=>{sys+='\n'+g.en+' → '+g.tgt;});
   }
-  if(lines.some(l=>/%[sdif]|\{[^}]+\}/.test(l))){
-    sys+='\n\nPLACEHOLDER RULE: Preserve ALL placeholders EXACTLY (%s %d {0} etc). Do NOT remove or translate them.';
+  if(lines.some(l=>/%(?:\d+\$)?[A-Za-z][A-Za-z0-9_]*|\{[^}]+\}/.test(l))){
+    sys+='\n\nPLACEHOLDER RULE: Preserve ALL placeholders/code tokens EXACTLY (%s %d %h %m %dmg %abc {0} {name} etc). Do NOT remove, split, or translate them.';
   }
   // Token protection rule — luôn inject nếu có ⟨T⟩ tokens trong input
   if(lines.some(l=>/⟨T\d+⟩/.test(l))){
-    sys+='\n\nTOKEN RULE: Input has protected tokens ⟨T0⟩⟨T1⟩... = invisible HTML tags. STRICT RULES:\n1. NEVER drop, duplicate, or reorder any token — every ⟨Tn⟩ in input MUST appear in output\n2. Tokens come in PAIRS: ⟨T0⟩...⟨T1⟩, ⟨T2⟩...⟨T3⟩ — even=open, odd=close. EVERY pair must have content\n3. NEVER empty a token pair — ⟨T4⟩Cave⟨T5⟩ must NOT become ⟨T4⟩⟨T5⟩ (empty!). Always keep a translation inside\n4. Translate each pair INDEPENDENTLY — do NOT merge two pairs into one:\n   WRONG: ⟨T2⟩Ancient⟨T3⟩ ⟨T4⟩Cave⟨T5⟩ → ⟨T2⟩Cổ Động⟨T3⟩ ⟨T4⟩⟨T5⟩  ← Cave lost!\n   RIGHT:  ⟨T2⟩Ancient⟨T3⟩ ⟨T4⟩Cave⟨T5⟩ → ⟨T2⟩Cổ⟨T3⟩ ⟨T4⟩Động⟨T5⟩  ← each pair keeps one part\n5. NEVER swap content between pairs:\n   WRONG: ⟨T4⟩Common⟨T5⟩ ⟨T6⟩Sword⟨T7⟩ → ⟨T4⟩Kiếm⟨T5⟩ ⟨T6⟩Phổ Thông⟨T7⟩\n   RIGHT:  ⟨T4⟩Common⟨T5⟩ ⟨T6⟩Sword⟨T7⟩ → ⟨T4⟩Phổ Thông⟨T5⟩ ⟨T6⟩Kiếm⟨T7⟩\n6. Text OUTSIDE tokens stays outside. Count tokens in input = count in output';
+    sys+='\n\nTOKEN RULE: Input has protected tokens like ⟨T0⟩, ⟨T1⟩. They represent original game/code/tag tokens such as <...>, [...], {...}, %s, %dmg, %abc, or `code`. STRICT RULES:\n1. NEVER translate, remove, duplicate, rename, split, or reorder any protected token.\n2. Every ⟨Tn⟩ appearing in an input row MUST appear exactly once in that same output row, in the same relative order.\n3. Translate only human-readable words around/between tokens. Keep tokens attached to their surrounding text.\n4. Standalone prefix/suffix code tokens are valid. Example: ⟨T0⟩Sword Energy → ⟨T0⟩translated Sword Energy. Do NOT invent a closing token.\n5. Paired markup tokens are valid. Example: ⟨T0⟩Equipment crafting⟨T1⟩ → ⟨T0⟩translated Equipment crafting⟨T1⟩. Translate inside, keep wrappers.\n6. Percent-code tokens may be longer than one letter, e.g. %dmg or %hp_01. Treat the whole token as one locked code token.\n7. Count of protected tokens in each output row MUST equal the count in that input row. No markdown, no explanations.';
   }
-  const numbered=lines.map((l,i)=>`[${i+1}] ${l}`);
-  const user=JSON.stringify(numbered);
+  const TYPE_CODE={weapon:'w',dialogue:'d',system:'s',multi:'m'};
+  const userPayload = type==='mixed'
+    ? lines.map((l,i)=>({i:i+1,t:TYPE_CODE[types[i]]||'d',x:l}))
+    : lines.map((l,i)=>`[${i+1}] ${l}`);
+  const user=JSON.stringify(userPayload);
 
-  // Rewrite "Return ONLY a JSON array" → {"items":[...]} để tương thích response_format json_object
-  // json_object mode yêu cầu top-level là {} không phải [] — đây là patch cho đúng contract
-  sys=sys.replace(
-    /Return ONLY a JSON array[^.]*\./gi,
-    'Return ONLY a JSON object: {"items":["translation1","translation2",...]} — same length as input. No explanation.'
-  );
+  // v8.3 legacy-cost: no response_format/schema overhead. Keep simple JSON array contract.
+  sys=sys.replace(/Return ONLY a JSON object[^\n]*(?:\n|$)/gi,'Return ONLY a JSON array of strings. No explanation.\n');
+  if(!/Return ONLY a JSON array/i.test(sys)) sys+='\n\nReturn ONLY a JSON array of '+lines.length+' translated strings, same order. No markdown, no explanation.';
 
   const naiveTok=tok('Translate. Return JSON.')+tok(JSON.stringify(lines));
   totalTok+=naiveTok;savedTok+=Math.max(0,naiveTok-tok(sys)-tok(user));
@@ -2626,20 +2750,35 @@ function repairJSON(raw,expectedLen){
 ══════════════════════════════════════════ */
 async function apiFetch(url,options,onWait){
   const MAX=4;let delay=1500;
+  const timeoutMs=Number(localStorage.getItem('api_timeout_ms')||180000);
   for(let i=0;i<=MAX;i++){
+    if(abortFlag)throw new Error('TRANSLATION_ABORTED');
+    const controller=new AbortController();
+    activeApiControllers.add(controller);
+    const timer=setTimeout(()=>controller.abort(),timeoutMs);
     let res;
-    try{res=await fetch(url,options);}
-    catch(e){
+    try{
+      res=await fetch(url,{...options,signal:controller.signal});
+    }catch(e){
+      clearTimeout(timer);activeApiControllers.delete(controller);
+      if(abortFlag||e.name==='AbortError'){
+        if(abortFlag)throw new Error('TRANSLATION_ABORTED');
+        if(i===MAX)throw new Error('REQUEST_TIMEOUT_'+Math.round(timeoutMs/1000)+'s');
+        const w=delay+Math.random()*600;
+        onWait&&onWait('Request timeout — thử lại '+(i+1)+'/'+MAX+' sau '+(w/1000).toFixed(0)+'s…');
+        await sleep(w);delay=Math.min(delay*2,30000);continue;
+      }
       if(i===MAX)throw e;
       const w=delay+Math.random()*600;
       onWait&&onWait('Lỗi mạng, thử lại '+(i+1)+'/'+MAX+'…');
-      await new Promise(r=>setTimeout(r,w));delay=Math.min(delay*2,30000);continue;
+      await sleep(w);delay=Math.min(delay*2,30000);continue;
     }
+    clearTimeout(timer);activeApiControllers.delete(controller);
     if(res.status===429||res.status===503){
       if(i===MAX)throw new Error('HTTP '+res.status);
       const w=parseInt(res.headers.get('retry-after')||'0')*1000||delay+Math.random()*600;
       onWait&&onWait('Rate limit — chờ '+(w/1000).toFixed(0)+'s…');
-      await new Promise(r=>setTimeout(r,w));delay=Math.min(delay*2,30000);continue;
+      await sleep(w);delay=Math.min(delay*2,30000);continue;
     }
     return res;
   }
@@ -2763,6 +2902,19 @@ function updateStats(){
   const pct=totalTok>0?Math.round(savedTok/totalTok*100):0;
   document.getElementById('sv-save').textContent='~'+pct+'%';
   document.getElementById('statsrow').style.display='flex';
+}
+
+function resetRunUiForFreshImport(msg='Đã load file mới — sẵn sàng dịch.'){
+  apiCallCount=0;savedTok=0;totalTok=0;ppCount=0;tmHitCount=0;abortFlag=false;_globalStyleLock=null;
+  try{activeApiControllers.forEach(c=>{try{c.abort();}catch(_){}});activeApiControllers.clear();}catch(_){ }
+  const pf=document.getElementById('pf');if(pf)pf.style.width='0%';
+  const st=document.getElementById('tst');if(st){st.textContent=msg;st.className='st ok';}
+  const btn=document.getElementById('trans-btn');if(btn)btn.disabled=false;
+  const stop=document.getElementById('stop-btn');if(stop){stop.style.display='none';stop.disabled=false;stop.textContent='⏹ Dừng';}
+  const exp=document.getElementById('exp-btn');if(exp)exp.style.display='none';
+  const retry=document.getElementById('retry-btn');if(retry)retry.style.display='none';
+  try{setWorkerPanelVisible(false);}catch(_){ }
+  updateSum();updateStats();
 }
 
 /* ══════════════════════════════════════════
@@ -2943,9 +3095,20 @@ function clearLog(){logEntries.length=0;document.getElementById('log-body').inne
 /* ══════════════════════════════════════════
    CHECKPOINT
 ══════════════════════════════════════════ */
-const CP_KEY='weapon_tool_v7_cp';
-function saveCP(){
-  try{localStorage.setItem(CP_KEY,JSON.stringify({file:currentFilename,lang:currentLang,n:rows.length,ts:Date.now(),rows:rows.map(r=>({en:r.en,tgt:r.tgt,pp:r.pp,status:r.status,mode:r.mode,_tmScore:r._tmScore}))}));}catch(_){}
+const CP_KEY='weapon_tool_v8_2_8_cp';
+let _lastCPSave=0;
+function saveCP(force=false){
+  // 42k rows: stringify + localStorage mỗi patch có thể làm UI đứng ngắn.
+  // Giữ checkpoint nhưng throttle để worker pool không bị kẹt sau 1-2 patch đầu.
+  const now=Date.now();
+  if(!force && now-_lastCPSave<5000)return;
+  _lastCPSave=now;
+  try{
+    localStorage.setItem(CP_KEY,JSON.stringify({
+      file:currentFilename,lang:currentLang,n:rows.length,ts:Date.now(),
+      rows:rows.map(r=>({en:r.en,tgt:r.tgt,pp:r.pp,status:r.status,mode:r.mode,_tmScore:r._tmScore}))
+    }));
+  }catch(_){}
 }
 function loadCP(file,n){
   try{const raw=localStorage.getItem(CP_KEY);if(!raw)return null;const cp=JSON.parse(raw);if(cp.file===file&&cp.n===n)return cp;}catch(_){}return null;
@@ -2972,6 +3135,9 @@ function processExcel(file){
     cs.innerHTML=headers.map((h,i)=>`<option value="${i}">${h||'Cột '+(i+1)}</option>`).join('');
     document.getElementById('colpick').style.display=headers.length>1?'block':'none';
     buildRows(dr);currentFilename=file.name;
+    // Clean start thật sự: bỏ cache/TM session cũ để tránh hiện cache hit hoặc dính demo 22 dòng.
+    cache.clear(); TM.clear(); tmHitCount=0;
+    resetRunUiForFreshImport('Đã load '+file.name+' — '+rows.length.toLocaleString('vi')+' dòng, sẵn sàng dịch.');
     document.getElementById('dropzone').classList.add('got');
     document.getElementById('drop-t').textContent='✓ '+file.name;
     document.getElementById('drop-s').textContent=rows.length+' dòng';
@@ -2981,9 +3147,9 @@ function processExcel(file){
     document.getElementById('clear-cache-btn').style.display='inline-block';
     document.getElementById('abar').style.display='flex';
     document.getElementById('tblcard').style.display='block';
-    if(rows.length>200){document.getElementById('warnb').style.display='block';document.getElementById('warnb').textContent='⚠ '+rows.length+' dòng — 42k mode: tool sẽ tự chia thành nhiều patch nhỏ và giữ ngữ nghĩa bằng glossary/TM/context.';}
+    if(rows.length>200){document.getElementById('warnb').style.display='block';document.getElementById('warnb').textContent='⚠ '+rows.length+' dòng — 42k mode v8.3 Legacy Cost: mixed batch + token/code/tag protect + local label/tag repair + low-retry cheap mode.';}
     // Apply typo fix if enabled
-    if(document.getElementById('use-typo').checked)applyFixes();
+    if(document.getElementById('use-typo').checked)fixRowsTyposSilently();
     renderTable();updateCostEstimate();renderTypoPanel();updatePipelineStatus();
     // Check checkpoint
     const cp=loadCP(file.name,rows.length);
@@ -3003,6 +3169,7 @@ function reloadCol(){
   const ws=wb.Sheets[wsName];
   buildRows(XLSX.utils.sheet_to_json(ws,{header:1,defval:''}).slice(1).filter(r=>r.some(c=>String(c).trim())));
   rows.forEach(r=>{r.tgt='';r.pp='';r.status='pending';r.mode='?';});
+  resetRunUiForFreshImport('Đã đổi cột — '+rows.length.toLocaleString('vi')+' dòng, sẵn sàng dịch.');
   renderTable();updateCostEstimate();
 }
 function clearFile(){
@@ -3018,7 +3185,7 @@ function clearFile(){
   ['abar','tblcard','statsrow','warnb','colpick','cost-card','preprocess-card'].forEach(id=>document.getElementById(id).style.display='none');
   ['exp-btn','retry-btn'].forEach(id=>document.getElementById(id).style.display='none');
   document.getElementById('tst').textContent='';
-  apiCallCount=0;savedTok=0;totalTok=0;abortFlag=false;
+  apiCallCount=0;savedTok=0;totalTok=0;abortFlag=false;activeApiControllers.clear();
 }
 
 
@@ -3026,48 +3193,71 @@ function clearFile(){
    42K PATCH ENGINE — adaptive split + semantic sync
 ══════════════════════════════════════════ */
 function calcMaxOutTokens(lines, lang=currentLang){
-  const factor={vi:2.2,ar:3.0,ko:2.2,tr:2.5,km:4.8,de:3.0}[lang]||2.8;
+  // Legacy-style output budget: close to the old cheap formula, with a bit more room for AR/DE/KM.
   const chars=lines.join('\n').length;
-  const byChars=Math.ceil(chars*factor)+1400;
-  const byTok=Math.ceil(lines.reduce((s,l)=>s+tok(l),0)*factor)+900;
-  return Math.min(16000,Math.max(2048,byChars,byTok));
+  const charFactor={vi:0.58,ar:0.78,ko:0.65,tr:0.72,km:1.25,de:0.85}[lang]||0.75;
+  const byChars=Math.ceil(chars*charFactor)+lines.length*7+350;
+  const hardCap=(lang==='km')?14000:12000;
+  return Math.min(hardCap,Math.max(512,byChars));
 }
 function responseFormatForModel(model){
-  if(/^gpt-5/i.test(model))return null;
-  return {
-    type:'json_schema',
-    json_schema:{
-      name:'translation_batch',
-      strict:true,
-      schema:{
-        type:'object',
-        additionalProperties:false,
-        properties:{items:{type:'array',items:{type:'string'}}},
-        required:['items']
-      }
-    }
-  };
+  // v8.3: disable json_schema/json_object overhead. Prompt + repairJSON handles array/object outputs.
+  return null;
 }
 function buildSemanticSyncContext(batch,type){
   const first=rows.indexOf(batch[0]);
   const mem=[];
-  for(let i=first-1;i>=0&&mem.length<10;i--){
+  for(let i=first-1;i>=0&&mem.length<5;i--){
     const r=rows[i];
     if(!r||!r.en||!(r.pp||r.tgt))continue;
     const rt=r._type||detectType(r.en);
-    // Neighboring rows keep story/pronoun/register consistency; same-type rows keep style consistency.
-    if(rt===type || Math.abs(first-i)<=12){
+    if(type==='mixed' || rt===type || Math.abs(first-i)<=8){
       mem.unshift(`[${i+1}] ${r.en} => ${r.pp||r.tgt}`);
     }
   }
-  let ctx='\n\nCONSISTENCY RULE FOR LARGE EXCEL FILES: This file is translated in many small patches. Keep terminology, names, pronouns, register, tone, and narrative meaning consistent with previous patches. Do NOT reinterpret the story independently per patch. Use the glossary and translation memory as the source of truth.';
-  if(mem.length){
-    ctx+='\n\nPREVIOUS ACCEPTED TRANSLATIONS (context only, do not retranslate these lines):\n'+mem.join('\n');
-  }
-  return ctx.slice(0,2600);
+  let ctx='\n\nCONSISTENCY: keep terms, names, pronouns and tone consistent with earlier rows. Do not reinterpret story per patch.';
+  if(mem.length) ctx+='\nPREVIOUS ACCEPTED TRANSLATIONS (context only):\n'+mem.join('\n');
+  return ctx.slice(0,1200);
 }
 function isSplitworthyError(err){
-  return /JSON|repairJSON|Cannot repair|MODEL_OUTPUT_TRUNCATED|Output count|length mismatch|Parser guard|tag corruption|Unterminated|Unexpected end/i.test(String(err&&err.message||err));
+  return /JSON|repairJSON|Cannot repair|MODEL_OUTPUT_TRUNCATED|Output count|length mismatch|Parser guard|Unterminated|Unexpected end/i.test(String(err&&err.message||err));
+}
+function extractLockedTokens(s){
+  return String(s||'').match(/<[^>]+>|\[[^\]\r\n]{0,180}\]|\{[^}\r\n]{1,160}\}|%(?:\d+\$)?[A-Za-z][A-Za-z0-9_]*|`[^`\r\n]{1,180}`/g)||[];
+}
+function removeLockedTokens(s){
+  return String(s||'').replace(/<[^>]+>|\[[^\]\r\n]{0,180}\]|\{[^}\r\n]{1,160}\}|%(?:\d+\$)?[A-Za-z][A-Za-z0-9_]*|`[^`\r\n]{1,180}`/g,'').trim();
+}
+function repairLockedTokensLocal(src,out){
+  const srcTokens=extractLockedTokens(src), outTokens=extractLockedTokens(out);
+  if(!srcTokens.length)return out;
+  if(srcTokens.length===outTokens.length && srcTokens.every((t,i)=>t===outTokens[i]))return out;
+  const srcStr=String(src||'');
+  const TOK='(?:<[^>]+>|\\[[^\\]\\r\\n]{0,180}\\]|\\{[^}\\r\\n]{1,160}\\}|%(?:\\d+\\$)?[A-Za-z][A-Za-z0-9_]*|`[^`\\r\\n]{1,180}`)';
+  const leading=(srcStr.match(new RegExp('^(?:\\s*'+TOK+')+'))||[''])[0].trim();
+  const trailing=(srcStr.match(new RegExp('(?:\\s*'+TOK+')+\\s*$'))||[''])[0].trim();
+  const leadTokens=extractLockedTokens(leading), trailTokens=extractLockedTokens(trailing);
+  if(leadTokens.length+trailTokens.length===srcTokens.length){
+    const clean=removeLockedTokens(out);
+    return (leadTokens.join('')+(clean?' '+clean:'')+(trailTokens.length?' '+trailTokens.join(''):'')).trim();
+  }
+  return out;
+}
+function priceForModel(model){
+  if(model==='gpt-4o-mini')return {in:0.150,out:0.600};
+  if(model==='gpt-4.1-mini')return {in:0.400,out:1.600};
+  if(model==='gpt-4.1')return {in:2.000,out:8.000};
+  if(model==='gpt-4o')return {in:2.500,out:10.000};
+  if(/^gpt-5/i.test(model))return {in:25,out:75};
+  return {in:0.150,out:0.600};
+}
+function addUsageCost(data,model){
+  const u=data&&data.usage;if(!u)return;
+  const input=u.prompt_tokens||u.input_tokens||0;
+  const output=u.completion_tokens||u.output_tokens||0;
+  runInputTok+=input;runOutputTok+=output;
+  const p=priceForModel(model);
+  runCostUSD+=(input*p.in+output*p.out)/1000000;
 }
 async function callChatCompletion({key,model,body,onWait}){
   const post=async(b)=>{
@@ -3084,6 +3274,7 @@ async function callChatCompletion({key,model,body,onWait}){
     data=await post(fallback);
   }
   if(data.error){throw new Error('['+data.error.code+'] '+data.error.message);}
+  addUsageCost(data,model);
   const choice=data.choices&&data.choices[0];
   if(!choice||!choice.message||!choice.message.content)throw new Error('No model output');
   if(choice.finish_reason==='length')throw new Error('MODEL_OUTPUT_TRUNCATED: max_tokens too low or patch too large');
@@ -3092,8 +3283,12 @@ async function callChatCompletion({key,model,body,onWait}){
 async function translateOnePatch(batch,ctx,depth=0,label=''){
   const {key,mainMdl,usePP,st,prof,batchNo,totalBatches}=ctx;
   const lines=batch.map(r=>r.en);
-  const batchType=batch[0]._type||detectType(lines[0]||'');
-  st.innerHTML=`<span class="blink">Patch ${label||batchNo}/${totalBatches} · ${lines.length} items · ${mainMdl} → ${prof.flag} ${prof.viName}...</span>`;
+  const rowTypes=batch.map((r,idx)=>r._type||detectType(lines[idx]||''));
+  batch.forEach((r,idx)=>{r._type=rowTypes[idx];});
+  const typeSet=[...new Set(rowTypes)];
+  const batchType=typeSet.length===1?typeSet[0]:'mixed';
+  const typeLabel=batchType==='mixed'?'mixed:'+typeSet.map(t=>t.slice(0,3).toUpperCase()).join('/') : batchType;
+  st.innerHTML=`<span class="blink">${ctx.workers&&ctx.workers>1?'Legacy Cost '+ctx.workers+' luồng · ':''}Patch ${label||batchNo}/${totalBatches} · ${lines.length} items · ${typeLabel} · ${mainMdl} → ${prof.flag} ${prof.viName}...</span>`;
 
   const tokenMaps=[];
   const protectedLines=lines.map((line,idx)=>{
@@ -3101,10 +3296,10 @@ async function translateOnePatch(batch,ctx,depth=0,label=''){
     tokenMaps[idx]={compound:false,map};
     return text;
   });
-  const prompt=mkPrompt(protectedLines,batchType);
+  const prompt=mkPrompt(protectedLines,batchType,rowTypes);
   const baseSys=prompt.sys+buildSemanticSyncContext(batch,batchType);
   const user=prompt.user;
-  const onWait=msg=>{st.innerHTML=`<span class="blink">⏳ ${msg}</span>`;};
+  const onWait=msg=>{st.innerHTML=`<span class="blink">⏳ Patch ${label||batchNo}/${totalBatches}: ${msg}</span>`;};
 
   const callAPI=async(overrideSys)=>{
     const body={
@@ -3125,30 +3320,23 @@ async function translateOnePatch(batch,ctx,depth=0,label=''){
     let raw=await callAPI();
     try{arr=repairJSON(raw,lines.length);}
     catch(parseErr){
-      logError(batchNo-1,'json','repairJSON failed, retrying: '+parseErr.message);
-      raw=await callAPI(baseSys+'\n\nSTRICT JSON RETRY: Output ONLY {"items":["str1","str2",...]} with exactly '+lines.length+' '+prof.name+' strings. No numbering. No markdown. No explanation.');
+      // Cheap mode: do not retry the same large patch. Split immediately.
+      if(lines.length>35){
+        logError(batchNo-1,'json','JSON lỗi → chẻ nhỏ, không retry cùng size để tiết kiệm: '+parseErr.message);
+        throw parseErr;
+      }
+      logError(batchNo-1,'json','small patch JSON retry once: '+parseErr.message);
+      raw=await callAPI(baseSys+'\n\nSTRICT JSON RETRY: Output ONLY a JSON array of exactly '+lines.length+' '+prof.name+' strings. No numbering. No markdown. No explanation.');
       arr=repairJSON(raw,lines.length);
     }
-    arr=arr.map(s=>String(s||'').replace(/^\s*\[\d+\]\s*/,'').trim());
+    arr=arr.map(s=>stripInternalTypeLabels(String(s||'').replace(/^\s*\[\d+\]\s*/,''),''));
     if(arr[0]==='items')throw new Error('Parser guard: object key items leaked into translations');
     if(arr.length!==lines.length)throw new Error('Output count mismatch: got '+arr.length+', expected '+lines.length);
 
     arr=arr.map((out,idx)=>restoreAll(out,tokenMaps[idx].map));
-
-    const structCorrupt=arr.some((out,idx)=>{
-      const orig=lines[idx]||'';
-      if(!/<color=/i.test(orig))return false;
-      return !detectTagCorruption(orig,out).ok;
-    });
-    if(!structCorrupt||structRetries>=2)break;
-    structRetries++;
-    onWait(`Tag corruption — retry #${structRetries} với prompt tăng cường...`);
-    await new Promise(r=>setTimeout(r,800));
-    const strictTagSys=baseSys+'\n\nTAG INTEGRITY RETRY: Previous response was rejected. Preserve every protected token exactly. Never drop, duplicate, merge, or reorder ⟨Tn⟩ tokens. Translate only text content inside each token pair.';
-    let raw2=await callAPI(strictTagSys);
-    let arr2=repairJSON(raw2,lines.length).map(s=>String(s||'').replace(/^\s*\[\d+\]\s*/,'').trim());
-    arr2=arr2.map((out,idx)=>restoreAll(out,tokenMaps[idx].map));
-    arr=arr2;
+    // Cheap local token repair: do not call API again for tag/order issues.
+    arr=arr.map((out,idx)=>repairLockedTokensLocal(lines[idx]||'',out));
+    break;
   }
 
   batch.forEach((r,j)=>{
@@ -3156,11 +3344,12 @@ async function translateOnePatch(batch,ctx,depth=0,label=''){
     if(ri<0)return;
     const rowType=r._type||batchType;
     let llmOut=Array.isArray(arr)?(arr[j]||''):String(arr);
+    llmOut=sanitizeLLMOutput(repairLockedTokensLocal(r.en,llmOut),currentLang,rowType,r.en);
     let ppOut=llmOut;
     if(usePP){
       const{out,changed}=applyPostProcess(llmOut,currentLang,rowType,r.en);
-      ppOut=out;
-      if(changed)ppCount++;
+      ppOut=sanitizeLLMOutput(repairLockedTokensLocal(r.en,out),currentLang,rowType,r.en);
+      if(changed||ppOut!==llmOut)ppCount++;
     }
     rows[ri].tgt=llmOut;
     rows[ri].pp=ppOut;
@@ -3184,6 +3373,7 @@ async function translatePatchAdaptive(batch,ctx,depth=0,label=''){
   if(abortFlag||!batch.length)return 0;
   try{return await translateOnePatch(batch,ctx,depth,label);}
   catch(e){
+    if(String(e&&e.message||e)==='TRANSLATION_ABORTED')return 0;
     if(batch.length>1 && depth<8 && isSplitworthyError(e)){
       const mid=Math.ceil(batch.length/2);
       logError((ctx.batchNo||1)-1,'split',`Patch ${label||ctx.batchNo} tự chẻ ${batch.length} → ${mid}+${batch.length-mid}: ${e.message}`);
@@ -3226,11 +3416,19 @@ async function translateAll(){
   const st=document.getElementById('tst');
   const pf=document.getElementById('pf');
   if(!key){st.textContent='Cần khóa API.';st.className='st er';return;}
-  if(!rows.length)return;
+  if(!rows.length){st.textContent='Chưa có dòng nào để dịch. Hãy import Excel/CSV trước.';st.className='st er';return;}
 
-  if(document.getElementById('use-typo').checked)applyFixes();
+  btn.disabled=true;
+  document.getElementById('stop-btn').style.display='inline-block';
+  document.getElementById('stop-btn').disabled=false;
+  document.getElementById('stop-btn').textContent='⏹ Dừng';
+  document.getElementById('pw').style.display='block';pf.style.width='2%';
+  st.innerHTML='<span class="blink">Đang chuẩn bị batch… nếu file 40k dòng, bước này có thể mất vài giây.</span>';st.className='st ok';
+  await yieldUI();
 
-  apiCallCount=0;savedTok=0;totalTok=0;abortFlag=false;ppCount=0;
+  if(document.getElementById('use-typo').checked)fixRowsTyposSilently();
+
+  apiCallCount=0;savedTok=0;totalTok=0;abortFlag=false;ppCount=0;runInputTok=0;runOutputTok=0;runCostUSD=0;
   // Lock style once for the whole 42k run → all patches share one semantic/register decision.
   {
     const lockSel=document.getElementById('style-lock').value;
@@ -3252,12 +3450,9 @@ async function translateAll(){
     }
   }
   document.getElementById('gloss-notice').style.display='none';
-  btn.disabled=true;
-  document.getElementById('stop-btn').style.display='inline-block';
-  document.getElementById('stop-btn').disabled=false;
-  document.getElementById('stop-btn').textContent='⏹ Dừng';
   document.getElementById('exp-btn').style.display='none';
-  document.getElementById('pw').style.display='block';pf.style.width='2%';
+  st.innerHTML='<span class="blink">Đang kiểm tra cache/TM và chia batch…</span>';
+  await yieldUI();
 
   if(doCache){
     rows.forEach(r=>{
@@ -3285,6 +3480,7 @@ async function translateAll(){
   if(!pending.length){
     btn.disabled=false;pf.style.width='100%';
     document.getElementById('exp-btn').style.display='inline-block';
+    setWorkerPanelVisible(false);
     st.textContent='Cache hit — 0 API calls!';st.className='st ok';
     renderTable();updateStats();return;
   }
@@ -3293,24 +3489,52 @@ async function translateAll(){
   document.getElementById('ps-pp').className='pipe-step'+(usePP?' active':'');
 
   const batches=mkBatches(pending);let done=0;
+  await yieldUI();
   const prof=LANG_PROFILES[currentLang];
-  st.textContent=`Đã chia ${pending.length.toLocaleString('vi')} dòng thành ${batches.length.toLocaleString('vi')} patch theo thứ tự Excel để giữ ngữ nghĩa.`;st.className='st ok';
+  const workers=getParallelWorkers();
+  const totalBatches=batches.length;
+  let nextBatchIndex=0,lastUiUpdate=0,lastRenderAt=0;
+  const workerStates=Array.from({length:workers},(_,i)=>({id:i+1,text:'sẵn sàng',cls:'wait'}));
+  setWorkerPanelVisible(workers>1);updateWorkerPanel(workerStates);
+  st.textContent=`Đã chia ${pending.length.toLocaleString('vi')} dòng thành ${totalBatches.toLocaleString('vi')} patch · Legacy Cost ${workers} luồng · batch lớn hơn, không json_schema, ít retry API, có cost meter thực tế.`;st.className='st ok';
 
-  for(let b=0;b<batches.length;b++){
-    if(abortFlag)break;
-    const batch=batches[b];
-    const ctx={key,mainMdl,usePP,st,prof,batchNo:b+1,totalBatches:batches.length};
-    await translatePatchAdaptive(batch,ctx,0,String(b+1));
-    done+=batch.length;
-    pf.style.width=Math.max(2,Math.round(done/pending.length*100))+'%';
+  const refreshProgress=()=>{
+    const now=Date.now();
+    if(now-lastUiUpdate<350)return;
+    lastUiUpdate=now;
+    const terminalDone=rows.filter(r=>r.status==='done'||r.status==='cached'||r.status==='error').length;
+    pf.style.width=Math.max(2,Math.round(Math.max(done,terminalDone)/pending.length*100))+'%';
     updateSum();updateStats();
+    if(runCostUSD>0){const costTag=document.getElementById('cost-summary-tag'); if(costTag)costTag.textContent='Run thực tế ~$'+runCostUSD.toFixed(4);}
     const anyDone=rows.some(r=>r.status==='done'||r.status==='cached');
     if(anyDone)document.getElementById('exp-btn').style.display='inline-block';
-    if(b%5===0)renderTable();
-    if(b<batches.length-1)await new Promise(r=>setTimeout(r,350));
+    if(now-lastRenderAt>5000){lastRenderAt=now;renderTable();}
+  };
+
+  async function workerLoop(workerId){
+    while(!abortFlag){
+      const idx=nextBatchIndex++;
+      if(idx>=totalBatches)break;
+      const batchNo=idx+1;
+      const batch=batches[idx];
+      workerStates[workerId-1]={id:workerId,text:`patch ${batchNo}/${totalBatches} · ${batch.length} dòng`,cls:'run'};
+      updateWorkerPanel(workerStates);
+      const ctx={key,mainMdl,usePP,st,prof,batchNo,totalBatches,workers,workerId};
+      const n=await translatePatchAdaptive(batch,ctx,0,String(batchNo));
+      done+=Number(n)||0;
+      workerStates[workerId-1]={id:workerId,text:`xong patch ${batchNo} · +${Number(n)||0}`,cls:'done'};
+      updateWorkerPanel(workerStates);
+      refreshProgress();
+      if(!abortFlag)await sleep(workers>1?120:350);
+    }
+    workerStates[workerId-1]={id:workerId,text:abortFlag?'đã dừng':'hết việc',cls:abortFlag?'wait':'done'};
+    updateWorkerPanel(workerStates);
   }
 
-  btn.disabled=false;document.getElementById('stop-btn').style.display='none';
+  await Promise.all(Array.from({length:workers},(_,i)=>workerLoop(i+1)));
+  saveCP(true);
+
+  btn.disabled=false;document.getElementById('stop-btn').style.display='none';document.getElementById('stop-btn').disabled=false;document.getElementById('stop-btn').textContent='⏹ Dừng';activeApiControllers.clear();
   document.getElementById('ps-llm').className='pipe-step done';
   document.getElementById('ps-pp').className='pipe-step done';
   document.getElementById('ps-qa').className='pipe-step done';
@@ -3318,7 +3542,7 @@ async function translateAll(){
   if(!abortFlag){
     if(!errs){
       try{localStorage.removeItem(CP_KEY);}catch(_){}
-      st.textContent=`Hoàn tất — ${rows.length.toLocaleString('vi')} items · ${apiCallCount} API calls · ${ppCount} post-processed`;
+      st.textContent=`Hoàn tất — ${rows.length.toLocaleString('vi')} items · ${apiCallCount} API calls · ${ppCount} post-processed · thực chi run này ~$${runCostUSD.toFixed(4)} (${runInputTok}/${runOutputTok} tok)`;
       st.className='st ok';
     }else{
       st.textContent='Xong với '+errs+' lỗi';st.className='st er';
@@ -3439,6 +3663,17 @@ async function pushGloss(){
 const _t=localStorage.getItem('gh_tok');
 if(_t){const el=document.getElementById('gh-token');if(el)el.value=_t;}
 setLang('vi');
+// Clean boot: file HTML gốc có thể còn DOM demo 22 dòng; xóa UI demo để tránh hiểu nhầm là đang cache/stuck.
+(function bootCleanUI(){
+  rows=[]; tablePage=0; currentFilename=''; apiCallCount=0; savedTok=0; totalTok=0; ppCount=0; tmHitCount=0; abortFlag=false;
+  try{setWorkerPanelVisible(false);}catch(_){}
+  const tbody=document.getElementById('tbody');
+  if(tbody)tbody.innerHTML='<tr><td colspan="7" class="empty">Chưa có file — hãy import Excel/CSV để bắt đầu.</td></tr>';
+  const tbl=document.getElementById('tblcard'); if(tbl)tbl.style.display='none';
+  const abar=document.getElementById('abar'); if(abar)abar.style.display='none';
+  const stats=document.getElementById('statsrow'); if(stats)stats.style.display='none';
+  const st=document.getElementById('tst'); if(st){st.textContent='Sẵn sàng — import file rồi bấm Dịch.';st.className='st ok';}
+})();
 // Fetch glossary.json mới nhất từ repo (override embedded)
 loadGlossFromRepo();
 </script>
