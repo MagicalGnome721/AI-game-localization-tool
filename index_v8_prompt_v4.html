@@ -910,6 +910,8 @@ function ensureGlossLoaded(lang=currentLang){
 }
 let apiCallCount=0,savedTok=0,totalTok=0,abortFlag=false,ppCount=0;
 let currentLang='vi';
+// 42k-row mode: render table by page so the browser does not freeze.
+let tablePage=0, tablePageSize=300;
 
 /* ── EMBEDDED CUSTOM GLOSSARY ──────────────────────────────────────
    Biến này được ghi tự động khi bấm "Lưu HTML + Glossary".
@@ -1841,12 +1843,12 @@ function saveHtmlWithGloss(){
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
   const ts=new Date().toISOString().slice(0,10);
-  a.download=`Tool_dich_v7_custom_${ts}.html`;
+  a.download=`AI_game_localization_v8_custom_${ts}.html`;
   a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),5000);
   // Thông báo
   const st=document.getElementById('api-st');
-  if(st){st.textContent=`✓ Đã lưu HTML với ${totalTerms} thuật ngữ (VI+AR+KO+TR+KM) — gửi file này cho người khác là dùng được luôn`;st.className='st ok';}
+  if(st){st.textContent=`✓ Đã lưu HTML với ${totalTerms} thuật ngữ (VI+AR+KO+TR+KM+DE) — gửi file này cho người khác là dùng được luôn`;st.className='st ok';}
 }
 /* ══════════════════════════════════════════
    SELECTIVE CACHE INVALIDATION
@@ -2367,20 +2369,21 @@ function tmLookup(en, lang, type) {
 ══════════════════════════════════════════ */
 function mkBatches(items){
   const budget=parseInt(document.getElementById('batch-tokens').value)||2500;
-  // Group by type → same-type batches → consistent prompt per batch
-  const groups={weapon:[],dialogue:[],system:[],multi:[]};
-  items.forEach(r=>{r._type=detectType(r.en);groups[r._type].push(r);});
+  // 42k production mode:
+  // Keep original Excel order for narrative/context consistency, but never mix prompt types in one API call.
+  // This creates many small patches: contiguous same-type chunks, split by token budget.
   const out=[];
-  Object.values(groups).forEach(group=>{
-    if(!group.length)return;
-    let cur=[],ct=0;
-    for(const item of group){
-      const t=tok(item.en)*2.5+8; // output dài hơn input, đặc biệt câu dài
-      if(cur.length>0&&ct+t>budget){out.push(cur);cur=[];ct=0;}
-      cur.push(item);ct+=t;
+  let cur=[],ct=0,curType=null;
+  for(const item of items){
+    const type=detectType(item.en); item._type=type;
+    // Conservative estimate: target languages like KM/DE/AR may expand or tokenize heavier.
+    const t=Math.max(16,Math.ceil(tok(item.en)*3.2+18));
+    if(cur.length>0 && (curType!==type || ct+t>budget)){
+      out.push(cur);cur=[];ct=0;curType=null;
     }
-    if(cur.length)out.push(cur);
-  });
+    cur.push(item);ct+=t;curType=type;
+  }
+  if(cur.length)out.push(cur);
   return out;
 }
 
@@ -2644,20 +2647,61 @@ async function apiFetch(url,options,onWait){
 /* ══════════════════════════════════════════
    RENDER TABLE
 ══════════════════════════════════════════ */
+function ensurePager(){
+  let pager=document.getElementById('tbl-pager');
+  if(!pager){
+    const wrap=document.querySelector('#tblcard .tbl-wrap');
+    pager=document.createElement('div');
+    pager.id='tbl-pager';
+    pager.style.cssText='display:flex;gap:6px;align-items:center;justify-content:flex-end;padding:7px 9px;border-bottom:.5px solid var(--border);font-size:11px;background:var(--bg);';
+    if(wrap&&wrap.parentNode)wrap.parentNode.insertBefore(pager,wrap);
+  }
+  return pager;
+}
+function goTablePage(delta){
+  const max=Math.max(0,Math.ceil(rows.length/tablePageSize)-1);
+  tablePage=Math.max(0,Math.min(max,tablePage+delta));
+  renderTable();
+}
+function setTablePage(p){
+  const max=Math.max(0,Math.ceil(rows.length/tablePageSize)-1);
+  tablePage=Math.max(0,Math.min(max,p));
+  renderTable();
+}
 function renderTable(){
   const prof=LANG_PROFILES[currentLang];
   const seen=new Map();
   rows.forEach((r,i)=>{if(r.pp){const k=r.pp.trim().toLowerCase();if(seen.has(k))seen.get(k).push(i);else seen.set(k,[i]);}});
   const dupIdx=new Set();seen.forEach(arr=>{if(arr.length>1)arr.forEach(i=>dupIdx.add(i));});
 
-  document.getElementById('tbody').innerHTML=rows.map((r,i)=>{
+  const totalPages=Math.max(1,Math.ceil(rows.length/tablePageSize));
+  if(tablePage>=totalPages)tablePage=totalPages-1;
+  if(tablePage<0)tablePage=0;
+  const start=tablePage*tablePageSize;
+  const end=Math.min(rows.length,start+tablePageSize);
+  const viewRows=rows.slice(start,end);
+
+  const pager=ensurePager();
+  if(rows.length>tablePageSize){
+    pager.style.display='flex';
+    pager.innerHTML=`<span style="margin-right:auto;color:var(--text2);">Đang hiển thị ${start+1}-${end}/${rows.length.toLocaleString('vi')} dòng · render theo trang để chịu được file 42k</span>
+      <button class="btn btn-sm" onclick="setTablePage(0)" ${tablePage===0?'disabled':''}>« Đầu</button>
+      <button class="btn btn-sm" onclick="goTablePage(-1)" ${tablePage===0?'disabled':''}>‹ Trước</button>
+      <span class="badge">Trang ${tablePage+1}/${totalPages}</span>
+      <button class="btn btn-sm" onclick="goTablePage(1)" ${tablePage>=totalPages-1?'disabled':''}>Sau ›</button>
+      <button class="btn btn-sm" onclick="setTablePage(${totalPages-1})" ${tablePage>=totalPages-1?'disabled':''}>Cuối »</button>`;
+  }else{
+    pager.style.display='none';
+  }
+
+  document.getElementById('tbody').innerHTML=viewRows.map((r,off)=>{
+    const i=start+off;
     const tgtStyle=prof.rtl?'direction:rtl;text-align:right;':'';
     const tgtFont='font-family:var(--sans);';
     const isStale=r.status==='stale';
     const qaFlags=r.pp&&!isStale?runQA(r.pp,currentLang,r.en,r._type||detectType(r.en)):[];
     if(dupIdx.has(i)&&!isStale)qaFlags.push('♊');
     const qaHtml=qaFlags.length?`<span class="tag t-qa">${qaFlags.join(' ')}</span>`:'';
-    // Stale: show old translation dimmed với strikethrough hint
     const rawDisp=r.tgt
       ?(isStale?`<span style="text-decoration:line-through;opacity:.6;">${esc(r.tgt)}</span>`:esc(r.tgt))
       :'—';
@@ -2900,7 +2944,7 @@ function processExcel(file){
     document.getElementById('clear-cache-btn').style.display='inline-block';
     document.getElementById('abar').style.display='flex';
     document.getElementById('tblcard').style.display='block';
-    if(rows.length>200){document.getElementById('warnb').style.display='block';document.getElementById('warnb').textContent='⚠ '+rows.length+' dòng — batch mode.';}
+    if(rows.length>200){document.getElementById('warnb').style.display='block';document.getElementById('warnb').textContent='⚠ '+rows.length+' dòng — 42k mode: tool sẽ tự chia thành nhiều patch nhỏ và giữ ngữ nghĩa bằng glossary/TM/context.';}
     // Apply typo fix if enabled
     if(document.getElementById('use-typo').checked)applyFixes();
     renderTable();updateCostEstimate();renderTypoPanel();updatePipelineStatus();
@@ -2915,8 +2959,9 @@ function processExcel(file){
   };
   r.readAsArrayBuffer(file);
 }
-function buildRows(dr){rows=dr.map(r=>({en:String(r[colIdx]||'').trim(),tgt:'',pp:'',status:'pending',mode:'?'})).filter(r=>r.en);}
+function buildRows(dr){tablePage=0;rows=dr.map(r=>({en:String(r[colIdx]||'').trim(),tgt:'',pp:'',status:'pending',mode:'?'})).filter(r=>r.en);}
 function reloadCol(){
+  tablePage=0;
   colIdx=parseInt(document.getElementById('colsel').value);if(!wb)return;
   const ws=wb.Sheets[wsName];
   buildRows(XLSX.utils.sheet_to_json(ws,{header:1,defval:''}).slice(1).filter(r=>r.some(c=>String(c).trim())));
@@ -2924,6 +2969,7 @@ function reloadCol(){
   renderTable();updateCostEstimate();
 }
 function clearFile(){
+  tablePage=0;
   rows=[];wb=null;wsName=null;headers=[];colIdx=0;ppCount=0;_globalStyleLock=null;
   cache.clear();
   TM.clear(); tmHitCount=0; // reset TM — tránh cross-file fuzzy match từ session cũ
@@ -2938,42 +2984,234 @@ function clearFile(){
   apiCallCount=0;savedTok=0;totalTok=0;abortFlag=false;
 }
 
+
+/* ══════════════════════════════════════════
+   42K PATCH ENGINE — adaptive split + semantic sync
+══════════════════════════════════════════ */
+function calcMaxOutTokens(lines, lang=currentLang){
+  const factor={vi:2.2,ar:3.0,ko:2.2,tr:2.5,km:4.8,de:3.0}[lang]||2.8;
+  const chars=lines.join('\n').length;
+  const byChars=Math.ceil(chars*factor)+1400;
+  const byTok=Math.ceil(lines.reduce((s,l)=>s+tok(l),0)*factor)+900;
+  return Math.min(16000,Math.max(2048,byChars,byTok));
+}
+function responseFormatForModel(model){
+  if(/^gpt-5/i.test(model))return null;
+  return {
+    type:'json_schema',
+    json_schema:{
+      name:'translation_batch',
+      strict:true,
+      schema:{
+        type:'object',
+        additionalProperties:false,
+        properties:{items:{type:'array',items:{type:'string'}}},
+        required:['items']
+      }
+    }
+  };
+}
+function buildSemanticSyncContext(batch,type){
+  const first=rows.indexOf(batch[0]);
+  const mem=[];
+  for(let i=first-1;i>=0&&mem.length<10;i--){
+    const r=rows[i];
+    if(!r||!r.en||!(r.pp||r.tgt))continue;
+    const rt=r._type||detectType(r.en);
+    // Neighboring rows keep story/pronoun/register consistency; same-type rows keep style consistency.
+    if(rt===type || Math.abs(first-i)<=12){
+      mem.unshift(`[${i+1}] ${r.en} => ${r.pp||r.tgt}`);
+    }
+  }
+  let ctx='\n\nCONSISTENCY RULE FOR LARGE EXCEL FILES: This file is translated in many small patches. Keep terminology, names, pronouns, register, tone, and narrative meaning consistent with previous patches. Do NOT reinterpret the story independently per patch. Use the glossary and translation memory as the source of truth.';
+  if(mem.length){
+    ctx+='\n\nPREVIOUS ACCEPTED TRANSLATIONS (context only, do not retranslate these lines):\n'+mem.join('\n');
+  }
+  return ctx.slice(0,2600);
+}
+function isSplitworthyError(err){
+  return /JSON|repairJSON|Cannot repair|MODEL_OUTPUT_TRUNCATED|Output count|length mismatch|Parser guard|tag corruption|Unterminated|Unexpected end/i.test(String(err&&err.message||err));
+}
+async function callChatCompletion({key,model,body,onWait}){
+  const post=async(b)=>{
+    const res=await apiFetch('https://api.openai.com/v1/chat/completions',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      body:JSON.stringify(b)
+    },onWait);
+    return await res.json();
+  };
+  let data=await post(body);
+  if(data.error && body.response_format && body.response_format.type==='json_schema' && /response_format|json_schema|schema/i.test(data.error.message||'')){
+    const fallback={...body,response_format:{type:'json_object'}};
+    data=await post(fallback);
+  }
+  if(data.error){throw new Error('['+data.error.code+'] '+data.error.message);}
+  const choice=data.choices&&data.choices[0];
+  if(!choice||!choice.message||!choice.message.content)throw new Error('No model output');
+  if(choice.finish_reason==='length')throw new Error('MODEL_OUTPUT_TRUNCATED: max_tokens too low or patch too large');
+  return choice.message.content.trim();
+}
+async function translateOnePatch(batch,ctx,depth=0,label=''){
+  const {key,mainMdl,usePP,st,prof,batchNo,totalBatches}=ctx;
+  const lines=batch.map(r=>r.en);
+  const batchType=batch[0]._type||detectType(lines[0]||'');
+  st.innerHTML=`<span class="blink">Patch ${label||batchNo}/${totalBatches} · ${lines.length} items · ${mainMdl} → ${prof.flag} ${prof.viName}...</span>`;
+
+  const tokenMaps=[];
+  const protectedLines=lines.map((line,idx)=>{
+    const{text,map}=protectAll(line);
+    tokenMaps[idx]={compound:false,map};
+    return text;
+  });
+  const prompt=mkPrompt(protectedLines,batchType);
+  const baseSys=prompt.sys+buildSemanticSyncContext(batch,batchType);
+  const user=prompt.user;
+  const onWait=msg=>{st.innerHTML=`<span class="blink">⏳ ${msg}</span>`;};
+
+  const callAPI=async(overrideSys)=>{
+    const body={
+      model:mainMdl,
+      max_tokens:calcMaxOutTokens(lines,currentLang),
+      temperature:0.08,
+      messages:[{role:'system',content:overrideSys||baseSys},{role:'user',content:user}]
+    };
+    const rf=responseFormatForModel(mainMdl);
+    if(rf)body.response_format=rf;
+    apiCallCount++;
+    return await callChatCompletion({key,model:mainMdl,body,onWait});
+  };
+
+  let arr;
+  let structRetries=0;
+  while(true){
+    let raw=await callAPI();
+    try{arr=repairJSON(raw,lines.length);}
+    catch(parseErr){
+      logError(batchNo-1,'json','repairJSON failed, retrying: '+parseErr.message);
+      raw=await callAPI(baseSys+'\n\nSTRICT JSON RETRY: Output ONLY {"items":["str1","str2",...]} with exactly '+lines.length+' '+prof.name+' strings. No numbering. No markdown. No explanation.');
+      arr=repairJSON(raw,lines.length);
+    }
+    arr=arr.map(s=>String(s||'').replace(/^\s*\[\d+\]\s*/,'').trim());
+    if(arr[0]==='items')throw new Error('Parser guard: object key items leaked into translations');
+    if(arr.length!==lines.length)throw new Error('Output count mismatch: got '+arr.length+', expected '+lines.length);
+
+    arr=arr.map((out,idx)=>restoreAll(out,tokenMaps[idx].map));
+
+    const structCorrupt=arr.some((out,idx)=>{
+      const orig=lines[idx]||'';
+      if(!/<color=/i.test(orig))return false;
+      return !detectTagCorruption(orig,out).ok;
+    });
+    if(!structCorrupt||structRetries>=2)break;
+    structRetries++;
+    onWait(`Tag corruption — retry #${structRetries} với prompt tăng cường...`);
+    await new Promise(r=>setTimeout(r,800));
+    const strictTagSys=baseSys+'\n\nTAG INTEGRITY RETRY: Previous response was rejected. Preserve every protected token exactly. Never drop, duplicate, merge, or reorder ⟨Tn⟩ tokens. Translate only text content inside each token pair.';
+    let raw2=await callAPI(strictTagSys);
+    let arr2=repairJSON(raw2,lines.length).map(s=>String(s||'').replace(/^\s*\[\d+\]\s*/,'').trim());
+    arr2=arr2.map((out,idx)=>restoreAll(out,tokenMaps[idx].map));
+    arr=arr2;
+  }
+
+  batch.forEach((r,j)=>{
+    const ri=rows.indexOf(r);
+    if(ri<0)return;
+    const rowType=r._type||batchType;
+    let llmOut=Array.isArray(arr)?(arr[j]||''):String(arr);
+    let ppOut=llmOut;
+    if(usePP){
+      const{out,changed}=applyPostProcess(llmOut,currentLang,rowType,r.en);
+      ppOut=out;
+      if(changed)ppCount++;
+    }
+    rows[ri].tgt=llmOut;
+    rows[ri].pp=ppOut;
+    rows[ri].status='done';
+    rows[ri].mode=rowType;
+    rows[ri]._type=rowType;
+    cache.set(cacheKey(r.en,rowType),{tgt:llmOut,pp:ppOut});
+    tmStore(r.en,llmOut,ppOut,currentLang,rowType);
+
+    const rawCell=document.getElementById('raw-'+ri);
+    const ppCell=document.getElementById('pp-'+ri);
+    const sCell=document.getElementById('s-'+ri);
+    if(rawCell){rawCell.className='tgt-c';rawCell.style.direction=prof.rtl?'rtl':'ltr';rawCell.style.fontFamily='var(--sans)';rawCell.textContent=llmOut;}
+    if(ppCell){const changed=ppOut!==llmOut;ppCell.className=changed?'pp-c':'tgt-c';ppCell.style.direction=prof.rtl?'rtl':'ltr';ppCell.style.fontFamily='var(--sans)';ppCell.textContent=ppOut;}
+    if(sCell)sCell.innerHTML=sIcon('done');
+  });
+  saveCP();
+  return batch.length;
+}
+async function translatePatchAdaptive(batch,ctx,depth=0,label=''){
+  if(abortFlag||!batch.length)return 0;
+  try{return await translateOnePatch(batch,ctx,depth,label);}
+  catch(e){
+    if(batch.length>1 && depth<8 && isSplitworthyError(e)){
+      const mid=Math.ceil(batch.length/2);
+      logError((ctx.batchNo||1)-1,'split',`Patch ${label||ctx.batchNo} tự chẻ ${batch.length} → ${mid}+${batch.length-mid}: ${e.message}`);
+      const left=await translatePatchAdaptive(batch.slice(0,mid),ctx,depth+1,(label||ctx.batchNo)+'.1');
+      const right=await translatePatchAdaptive(batch.slice(mid),ctx,depth+1,(label||ctx.batchNo)+'.2');
+      return left+right;
+    }
+    logError((ctx.batchNo||1)-1,e.message&&e.message.startsWith('[')? e.message.slice(1,5):'api',e.message||String(e));
+    batch.forEach(r=>{
+      const ri=rows.indexOf(r);
+      if(ri>=0){rows[ri].status='error';const s=document.getElementById('s-'+ri);if(s)s.innerHTML=sIcon('error');}
+    });
+    ctx.st.textContent='Patch '+(label||ctx.batchNo)+' lỗi: '+String(e.message||e).slice(0,90);ctx.st.className='st er';
+    return 0;
+  }
+}
+function clearCache(){
+  cache.clear();
+  TM.clear();tmHitCount=0;
+  rows.forEach(r=>{
+    if(r.status==='cached'||r.mode==='cache'||r.mode==='tm'){
+      r.tgt='';r.pp='';r.status='pending';r.mode='?';r._tmScore=null;delete r._forceApi;
+    }
+  });
+  try{localStorage.removeItem(CP_KEY);}catch(_){}
+  renderTable();updateStats();updateCostEstimate();
+  const st=document.getElementById('tst');
+  if(st){st.textContent='Đã xóa cache/TM — có thể dịch lại từ đầu.';st.className='st ok';}
+}
+
 /* ══════════════════════════════════════════
    MAIN TRANSLATE — FULL PIPELINE
 ══════════════════════════════════════════ */
 async function translateAll(){
   const key=document.getElementById('api-key').value.trim();
   const mainMdl=document.getElementById('mdl-main').value;
-  const fallMdl=document.getElementById('mdl-fallback').value;
-  const isDual=document.getElementById('dual-model').checked;
-  const doCache=document.getElementById('use-cache').checked;
   const usePP=document.getElementById('use-pp').checked;
+  const doCache=document.getElementById('use-cache').checked;
   const btn=document.getElementById('trans-btn');
   const st=document.getElementById('tst');
   const pf=document.getElementById('pf');
   if(!key){st.textContent='Cần khóa API.';st.className='st er';return;}
   if(!rows.length)return;
 
-  // STEP 1: Typo fix (if not already applied)
   if(document.getElementById('use-typo').checked)applyFixes();
 
   apiCallCount=0;savedTok=0;totalTok=0;abortFlag=false;ppCount=0;
-  // Lock style for entire run — nhất quán toàn bộ 40k dòng
+  // Lock style once for the whole 42k run → all patches share one semantic/register decision.
   {
     const lockSel=document.getElementById('style-lock').value;
     if(lockSel!=='auto'){
-      _globalStyleLock=lockSel; // user override
-    } else {
-      // Sample tất cả pending rows → majority vote
+      _globalStyleLock=lockSel;
+    }else{
       const allPending=rows.filter(r=>r.status==='pending'||r.status==='stale');
-      const src=allPending.map(r=>r.en).join(' ');
-      // Use language-appropriate detect for auto mode
-      // TR: set null so turkishPronounNormalize() and mkPrompt() use per-row/per-batch detection
+      // Sample instead of joining all 42k rows into a huge string.
+      const step=Math.max(1,Math.floor(allPending.length/800));
+      const sample=[];
+      for(let i=0;i<allPending.length&&sample.length<800;i+=step)sample.push(allPending[i].en);
+      const src=sample.join(' ');
       if(currentLang==='ar') _globalStyleLock=detectStyleAR(src);
       else if(currentLang==='ko') _globalStyleLock=detectStyleKO(src);
-      else if(currentLang==='tr') _globalStyleLock=null; // per-row: detectStyleTR() called per row/batch
+      else if(currentLang==='tr') _globalStyleLock=null;
       else if(currentLang==='km') _globalStyleLock=detectStyleKM(src);
-      else _globalStyleLock=detectStyle(src); // vi: formal/normal
+      else if(currentLang==='de') _globalStyleLock=detectStyle(src)==='casual'?'casual':'formal';
+      else _globalStyleLock=detectStyle(src);
     }
   }
   document.getElementById('gloss-notice').style.display='none';
@@ -2984,7 +3222,6 @@ async function translateAll(){
   document.getElementById('exp-btn').style.display='none';
   document.getElementById('pw').style.display='block';pf.style.width='2%';
 
-  // STEP 2: Cache pass (chỉ áp dụng cho pending, KHÔNG áp cho stale — stale phải dịch lại)
   if(doCache){
     rows.forEach(r=>{
       const type=detectType(r.en);r._type=type;
@@ -2995,7 +3232,6 @@ async function translateAll(){
       }
     });
   }
-  // STEP 2b: Fuzzy TM pass — runs after exact cache, before API
   tmHitCount=0;
   rows.forEach(r=>{
     if(r.status!=='pending'||r._forceApi)return;
@@ -3006,7 +3242,6 @@ async function translateAll(){
     r.status='cached';r.mode='tm';r._tmScore=hit.match;
     tmHitCount++;
   });
-  // Gộp stale vào pending để dịch lại
   rows.forEach(r=>{if(r.status==='stale'){r.status='pending';r.tgt='';r.pp='';r._forceApi=true;}});
 
   const pending=rows.filter(r=>r.status==='pending');
@@ -3017,158 +3252,25 @@ async function translateAll(){
     renderTable();updateStats();return;
   }
 
-  // Update pipeline status
   document.getElementById('ps-llm').className='pipe-step active';
   document.getElementById('ps-pp').className='pipe-step'+(usePP?' active':'');
 
   const batches=mkBatches(pending);let done=0;
   const prof=LANG_PROFILES[currentLang];
+  st.textContent=`Đã chia ${pending.length.toLocaleString('vi')} dòng thành ${batches.length.toLocaleString('vi')} patch theo thứ tự Excel để giữ ngữ nghĩa.`;st.className='st ok';
 
   for(let b=0;b<batches.length;b++){
     if(abortFlag)break;
     const batch=batches[b];
-    const lines=batch.map(r=>r.en);
-    st.innerHTML=`<span class="blink">Batch ${b+1}/${batches.length} · ${lines.length} items · ${mainMdl} → ${prof.flag} ${prof.viName}...</span>`;
-
-    // Batch type is homogeneous (all same type from mkBatches grouping)
-    const batchType=batch[0]._type||detectType(lines[0]||'');
-
-    // ── TOKEN PROTECTION (ONE-PASS) ──────────────────────────────────
-    // Model KHÔNG thấy <color=...> </color> <enter> {…} %s
-    const tokenMaps=[];
-    const protectedLines=lines.map((line,idx)=>{
-      // Always single protectAll — compound path removed (caused segment misalign)
-      const{text,map}=protectAll(line);
-      tokenMaps[idx]={compound:false,map};
-      return text;
-    });
-    const{sys,user,type:promptType}=mkPrompt(protectedLines,batchType);apiCallCount++;
-    const onWait=msg=>{st.innerHTML=`<span class="blink">⏳ ${msg}</span>`;};
-
-    const callAPI=async(overrideSys)=>{
-      // response_format json_object: ép model trả JSON sạch, bỏ qua với model không hỗ trợ
-      const supportsJsonMode=!mainMdl.startsWith('gpt-5'); // gpt-5 dùng structured output khác
-      const body={
-        model:mainMdl,
-        max_tokens:Math.min(16000,Math.max(512,lines.reduce((s,l)=>s+Math.ceil(l.length/2),0)+300)),
-        temperature:0.15,
-        messages:[{role:'system',content:overrideSys||sys},{role:'user',content:user}],
-        ...(supportsJsonMode?{response_format:{type:'json_object'}}:{})
-      };
-      const res=await apiFetch('https://api.openai.com/v1/chat/completions',{
-        method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
-        body:JSON.stringify(body)
-      },onWait);
-      const data=await res.json();
-      if(data.error){throw new Error('['+data.error.code+'] '+data.error.message);}
-      return data.choices[0].message.content.trim();
-    };
-
-    try{
-      let arr;
-      let structRetries=0;
-      while(true){
-        let raw=await callAPI();
-        try{arr=repairJSON(raw,lines.length);}
-        catch(parseErr){
-          logError(b,'json','repairJSON failed, retrying: '+parseErr.message);
-          raw=await callAPI('Output ONLY a JSON object {"items":["str1","str2",...]} with exactly '+lines.length+' '+prof.name+' strings in the items array.');
-          arr=repairJSON(raw,lines.length);
-        }
-
-        // Strip [N] prefix LLM may echo back
-        arr=arr.map(s=>String(s||'').replace(/^\[\d+\]\s*/,'').trim());
-        if(arr[0]==='items'){throw new Error('Parser guard: object key items leaked into translations');}
-        if(arr.length!==lines.length){throw new Error('Output count mismatch: got '+arr.length+', expected '+lines.length);}
-
-        // ── RESTORE TOKENS ──────────────────────────────────────────────
-        arr=arr.map((out,idx)=>{
-          const tm=tokenMaps[idx];
-          if(!tm)return out;
-          return restoreAll(out,tm.map);
-        });
-        // ────────────────────────────────────────────────────────────────
-
-        // Structural corruption check — retry nếu color tag count lệch
-        const structCorrupt=arr.some((out,idx)=>{
-          const orig=lines[idx]||'';
-          if(!/<color=/i.test(orig))return false;
-          return !detectTagCorruption(orig,out).ok;
-        });
-        if(!structCorrupt||structRetries>=2) break; // ok hoặc hết retry
-        structRetries++;
-        onWait(`Tag corruption — retry #${structRetries} với prompt tăng cường...`);
-        await new Promise(r=>setTimeout(r,800));
-        const totalColorTags=lines.reduce((s,l)=>{
-          const n=(l.match(/<color=[^>]+>/g)||[]).length;TOKEN_REGEX.lastIndex=0;return s+n;
-        },0);
-        const strictTagSys=sys+`\n\n⚠ TAG INTEGRITY OVERRIDE — previous response REJECTED (wrong tag count).\nOriginal has ${totalColorTags} opening <color> tags. Output MUST match EXACTLY.\n• Each ⟨Tn⟩word⟨Tn+1⟩ pair: translate ONLY "word", keep inside SAME pair\n• NEVER merge ⟨T2⟩A⟨T3⟩ ⟨T4⟩B⟨T5⟩ → ⟨T2⟩AB⟨T3⟩ (FORBIDDEN — drops a pair)\n• If "A B" → compound "XY": split → ⟨T2⟩X⟨T3⟩ ⟨T4⟩Y⟨T5⟩ (one word per pair)`;
-        let raw2;try{raw2=await callAPI(strictTagSys);}catch(_){continue;}
-        let arr2;try{arr2=repairJSON(raw2,lines.length);}catch(_){continue;}
-        arr2=arr2.map(s=>String(s||'').replace(/^\[\d+\]\s*/,'').trim());
-        arr2=arr2.map((out,idx)=>{const tm=tokenMaps[idx];if(!tm)return out;return restoreAll(out,tm.map);});
-        const stillCorrupt=arr2.some((out,idx)=>{
-          const orig=lines[idx]||'';if(!/<color=/i.test(orig))return false;
-          return !detectTagCorruption(orig,out).ok;
-        });
-        arr=arr2;
-        if(!stillCorrupt) break;
-      }
-
-      batch.forEach((r,j)=>{
-        const ri=rows.indexOf(r);
-        const rowType=r._type||batchType;
-        let llmOut=Array.isArray(arr)?(arr[j]||''):String(arr);
-
-        // STEP 3: Post-process (weapon only)
-        let ppOut=llmOut;
-        if(usePP){
-          const{out,changed}=applyPostProcess(llmOut,currentLang,rowType,r.en);
-          ppOut=out;
-          if(changed)ppCount++;
-        }
-
-        rows[ri].tgt=llmOut;
-        rows[ri].pp=ppOut;
-        rows[ri].status='done';
-        rows[ri].mode=rowType; // show type in Mode column
-        rows[ri]._type=rowType;
-        cache.set(cacheKey(r.en,rowType),{tgt:llmOut,pp:ppOut});
-        tmStore(r.en,llmOut,ppOut,currentLang,rowType); // feed TM
-
-        // Update cells live
-        const rawCell=document.getElementById('raw-'+ri);
-        const ppCell=document.getElementById('pp-'+ri);
-        const sCell=document.getElementById('s-'+ri);
-        if(rawCell){
-          rawCell.className='tgt-c';
-          rawCell.style.direction=prof.rtl?'rtl':'ltr';
-          rawCell.style.fontFamily='var(--sans)';
-          rawCell.textContent=llmOut;
-        }
-        if(ppCell){
-          const changed=ppOut!==llmOut;
-          ppCell.className=changed?'pp-c':'tgt-c';
-          ppCell.style.direction=prof.rtl?'rtl':'ltr';
-          ppCell.style.fontFamily='var(--sans)';
-          ppCell.textContent=ppOut;
-        }
-        if(sCell)sCell.innerHTML=sIcon('done');
-      });
-
-      saveCP();
-    }catch(e){
-      logError(b,e.message.startsWith('[')? e.message.slice(1,5):'api',e.message);
-      batch.forEach(r=>{const ri=rows.indexOf(r);rows[ri].status='error';const s=document.getElementById('s-'+ri);if(s)s.innerHTML=sIcon('error');});
-      st.textContent='Batch '+(b+1)+' lỗi: '+e.message.slice(0,80);st.className='st er';
-    }
-
-    done+=batch.length;pf.style.width=Math.round(done/pending.length*100)+'%';
+    const ctx={key,mainMdl,usePP,st,prof,batchNo:b+1,totalBatches:batches.length};
+    await translatePatchAdaptive(batch,ctx,0,String(b+1));
+    done+=batch.length;
+    pf.style.width=Math.max(2,Math.round(done/pending.length*100))+'%';
     updateSum();updateStats();
     const anyDone=rows.some(r=>r.status==='done'||r.status==='cached');
     if(anyDone)document.getElementById('exp-btn').style.display='inline-block';
-    if(b<batches.length-1)await new Promise(r=>setTimeout(r,450));
+    if(b%5===0)renderTable();
+    if(b<batches.length-1)await new Promise(r=>setTimeout(r,350));
   }
 
   btn.disabled=false;document.getElementById('stop-btn').style.display='none';
@@ -3179,7 +3281,7 @@ async function translateAll(){
   if(!abortFlag){
     if(!errs){
       try{localStorage.removeItem(CP_KEY);}catch(_){}
-      st.textContent=`Hoàn tất — ${rows.length} items · ${apiCallCount} API calls · ${ppCount} post-processed`;
+      st.textContent=`Hoàn tất — ${rows.length.toLocaleString('vi')} items · ${apiCallCount} API calls · ${ppCount} post-processed`;
       st.className='st ok';
     }else{
       st.textContent='Xong với '+errs+' lỗi';st.className='st er';
@@ -3187,7 +3289,7 @@ async function translateAll(){
     }
   }
   document.getElementById('exp-btn').style.display='inline-block';
-  renderTable();
+  renderTable();updateStats();
 }
 async function retryErrors(){rows.forEach(r=>{if(r.status==='error')r.status='pending';});document.getElementById('retry-btn').style.display='none';await translateAll();}
 
