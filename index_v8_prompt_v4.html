@@ -325,7 +325,7 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
             <option value="3">3 — nhanh</option>
             <option value="4">4 — thử nghiệm</option>
           </select>
-          <div style="font-size:10px;color:var(--text3);line-height:1.45;margin-top:5px;">Legacy cost: ưu tiên 2 luồng. 3 luồng nếu muốn nhanh hơn; 4 chỉ test ngắn.</div>
+          <div style="font-size:10px;color:var(--text3);line-height:1.45;margin-top:5px;">v8.3.2 cost-opt: ưu tiên 2 luồng. Tối ưu để giảm fail-call, giữ đúng tag/code bằng local QA.</div>
         </div>
         <div class="sc">
           <div class="sc-t">PHONG CÁCH (áp cố định toàn bộ)</div>
@@ -810,7 +810,7 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
 <!-- ERROR LOG -->
 <div class="card" id="logcard" style="display:none;">
   <div class="head click" onclick="toggleSec('log')">
-    <div class="ht"><span class="chev" id="log-chev">▶</span>Error Log <span class="badge" id="log-cnt">0</span></div>
+    <div class="ht"><span class="chev" id="log-chev">▶</span>Recovery Log <span class="badge" id="log-cnt">0</span></div>
     <button class="btn btn-sm btn-d" onclick="event.stopPropagation();clearLog()">Xóa</button>
   </div>
   <div class="coll" id="log-panel">
@@ -2557,7 +2557,7 @@ function stripPromptContractForMixed(prompt){
 }
 function mkMixedPromptIntro(types){
   const used=[...new Set(types)].filter(Boolean);
-  let sys='You are translating a large game localization Excel in original row order. This API call may contain mixed row types. Each mixed input item is a compact JSON object {i,t,x}. t is metadata only: w=weapon, d=dialogue, s=system, m=multi. Translate only x according to t. Return ONLY a JSON array of translated strings in the same order. Do NOT include ids, row numbers, type labels, translated type labels, explanations, or markdown.';
+  let sys='You are translating a large game localization Excel in original row order. This API call may contain mixed row types. Each mixed input item is a compact array [i,t,x]. t is metadata only: w=weapon, d=dialogue, s=system, m=multi. Translate only x according to t. Return ONLY a JSON array of translated strings in the same order. Do NOT include ids, row numbers, type labels, translated type labels, explanations, or markdown.';
   sys+='\n\nTYPE ROUTING RULES:';
   sys+='\n- w: weapon/item name; compact fantasy naming.';
   sys+='\n- d: NPC/story/dialogue; preserve meaning, tone and pronouns.';
@@ -2565,7 +2565,7 @@ function mkMixedPromptIntro(types){
   sys+='\n- m: multiple | segments; preserve exact | count/order.';
   used.forEach(t=>{
     const body=stripPromptContractForMixed(getPrompt(currentLang,t));
-    if(body)sys+='\n\n['+t.toUpperCase()+' DETAILED RULES]\n'+body.slice(0,750);
+    if(body)sys+='\n\n['+t.toUpperCase()+' DETAILED RULES]\n'+body.slice(0,520);
   });
   return sys;
 }
@@ -2645,23 +2645,24 @@ function mkPrompt(lines,type,types){
   if(lines.some(l=>/%(?:\d+\$)?[A-Za-z][A-Za-z0-9_]*|\{[^}]+\}/.test(l))){
     sys+='\n\nPLACEHOLDER RULE: Preserve ALL placeholders/code tokens EXACTLY (%s %d %h %m %dmg %abc {0} {name} etc). Do NOT remove, split, or translate them.';
   }
-  // Token protection rule — luôn inject nếu có ⟨T⟩ tokens trong input
+  // Token protection rule — short contract for lower input cost; local QA/repair handles strictness after LLM.
   if(lines.some(l=>/⟨T\d+⟩/.test(l))){
-    sys+='\n\nTOKEN RULE: Input has protected tokens like ⟨T0⟩, ⟨T1⟩. They represent original game/code/tag tokens such as <...>, [...], {...}, %s, %dmg, %abc, or `code`. STRICT RULES:\n1. NEVER translate, remove, duplicate, rename, split, or reorder any protected token.\n2. Every ⟨Tn⟩ appearing in an input row MUST appear exactly once in that same output row, in the same relative order.\n3. Translate only human-readable words around/between tokens. Keep tokens attached to their surrounding text.\n4. Standalone prefix/suffix code tokens are valid. Example: ⟨T0⟩Sword Energy → ⟨T0⟩translated Sword Energy. Do NOT invent a closing token.\n5. Paired markup tokens are valid. Example: ⟨T0⟩Equipment crafting⟨T1⟩ → ⟨T0⟩translated Equipment crafting⟨T1⟩. Translate inside, keep wrappers.\n6. Percent-code tokens may be longer than one letter, e.g. %dmg or %hp_01. Treat the whole token as one locked code token.\n7. Count of protected tokens in each output row MUST equal the count in that input row. No markdown, no explanations.';
+    sys+='\n\nTOKEN RULE: Protected tokens ⟨T0⟩, ⟨T1⟩... are locked game/code/tag/placeholders. For each row, copy every protected token exactly once in the same order. Translate only human-readable text. Never add, drop, translate, split, or reorder protected tokens. Return JSON array only.';
   }
   const TYPE_CODE={weapon:'w',dialogue:'d',system:'s',multi:'m'};
-  const userPayload = type==='mixed'
-    ? lines.map((l,i)=>({i:i+1,t:TYPE_CODE[types[i]]||'d',x:l}))
-    : lines.map((l,i)=>`[${i+1}] ${l}`);
-  const user=JSON.stringify(userPayload);
 
-  // v8.3 legacy-cost: no response_format/schema overhead. Keep simple JSON array contract.
-  sys=sys.replace(/Return ONLY a JSON object[^\n]*(?:\n|$)/gi,'Return ONLY a JSON array of strings. No explanation.\n');
-  if(!/Return ONLY a JSON array/i.test(sys)) sys+='\n\nReturn ONLY a JSON array of '+lines.length+' translated strings, same order. No markdown, no explanation.';
+  // v8.3.2 cost-optimized: use line protocol instead of JSON.
+  // JSON was the main reason 1 logical batch became 3+ paid API calls.
+  // Line protocol is cheaper, easier to parse, and avoids broken JSON recovery calls.
+  sys=sys.replace(/Return ONLY a JSON object[^\n]*(?:\n|$)/gi,'');
+  sys=sys.replace(/Return ONLY a JSON array[^\n]*(?:\n|$)/gi,'');
+  sys=sys.replace(/Return JSON array only\.?/gi,'');
+  sys+='\n\nOUTPUT FORMAT (STRICT, COST MODE): Return EXACTLY '+lines.length+' lines. Each line must be: id<TAB>translation. Keep the same numeric id and order. Do NOT output JSON. Do NOT output markdown. Do NOT include type codes (w/d/s/m) or labels like [WEAPON]. Translate only the text.';
+  const user='INPUT LINES: id<TAB>type<TAB>text\n'+lines.map((l,i)=>`${i+1}\t${TYPE_CODE[types[i]]||'d'}\t${l}`).join('\n');
 
-  const naiveTok=tok('Translate. Return JSON.')+tok(JSON.stringify(lines));
+  const naiveTok=tok('Translate. Return id tab translation lines.')+tok(lines.map((l,i)=>`${i+1}\t${l}`).join('\n'));
   totalTok+=naiveTok;savedTok+=Math.max(0,naiveTok-tok(sys)-tok(user));
-  return{sys,user,type};
+  return{sys,user,type,protocol:'line'};
 }
 
 /* ══════════════════════════════════════════
@@ -2743,6 +2744,43 @@ function repairJSON(raw,expectedLen){
   }
 
   throw new Error('Cannot repair JSON safely: '+s.slice(0,120));
+}
+
+
+function parseLineOutput(raw,expectedLen){
+  let s=String(raw||'').trim()
+    .replace(/^```(?:text|tsv)?\s*/i,'')
+    .replace(/\s*```$/,'')
+    .trim();
+
+  // If the model ignored the line protocol and returned JSON, still accept it.
+  if(/^\s*[\[{]/.test(s)){
+    try{return repairJSON(s,expectedLen);}catch(_){/* fall through */}
+  }
+
+  const lines=s.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+  const out=new Array(expectedLen);
+  for(const line of lines){
+    // Accept: 12<TAB>text, 12 | text, 12. text, [12] text, 12 - text
+    let m=line.match(/^\[?(\d+)\]?\s*(?:	|\|\|\||\||[:：.)\-–—])\s*(.*)$/s);
+    if(!m) continue;
+    const id=Number(m[1]);
+    if(id>=1&&id<=expectedLen){
+      let val=(m[2]||'').trim();
+      // If the model accidentally echoes the one-letter type code, strip it.
+      val=val.replace(/^(?:w|d|s|m)\s*(?:	|\|\|\||\||[:：.)\-–—])\s*/i,'').trim();
+      out[id-1]=val;
+    }
+  }
+  if(out.every(v=>typeof v==='string')) return out;
+
+  // Last fallback: when the model returns bare lines in exact order without ids.
+  if(lines.length===expectedLen && !lines.some(x=>/^\s*\d+\s*$/.test(x))){
+    return lines.map(x=>x.replace(/^\[?\d+\]?\s*(?:	|\|\|\||\||[:：.)\-–—])\s*/,'').trim());
+  }
+
+  const got=out.filter(v=>typeof v==='string').length;
+  throw new Error('LINE_PARSE_MISMATCH: got '+got+'/'+expectedLen+' lines. '+s.slice(0,120));
 }
 
 /* ══════════════════════════════════════════
@@ -3024,7 +3062,7 @@ function updateCostEstimate(){
       <td class="ra">$${m.out.toFixed(3)}</td>
       <td class="ra" style="color:var(--text3)">${fmtUSD(inCost)}</td>
       <td class="ra" style="color:var(--text3)">${fmtUSD(outCost)}</td>
-      <td class="ra bold"><span title="Base → có dự phòng retry/split nhẹ">${fmtUSDRange(total,high)}</span><div style="font-size:9px;color:var(--text3);font-weight:400;">lỗi nặng: ~${fmtUSD(stress)}</div></td>
+      <td class="ra bold"><span title="Base → có dự phòng retry/split nhẹ">${fmtUSDRange(total,high)}</span><div style="font-size:9px;color:var(--text3);font-weight:400;">recovery: ~${fmtUSD(stress)}</div></td>
     </tr>`;
   }).join('');
 
@@ -3036,14 +3074,14 @@ function updateCostEstimate(){
     const curStress=(stressInHigh/1e6*curM.inp)+(stressOutHigh/1e6*curM.out);
     const tag=document.getElementById('cost-summary-tag');
     tag.innerHTML=`~${fmtUSDRange(curCost,curHigh)} với ${curM.name}${savedByDedup}`;
-    tag.title=`Khoảng chính = chạy sạch → retry/split nhẹ. Nếu lỗi nặng có thể khoảng ${fmtUSD(curStress)}.`;
+    tag.title=`Khoảng chính = chạy sạch → recovery/split nhẹ. Nếu JSON hư nhiều có thể khoảng ${fmtUSD(curStress)}.`;
     tag.style.display='inline-flex';tag.style.alignItems='center';tag.style.gap='4px';
 
     const note=document.getElementById('cost-note');
     if(note){
       const pct=Math.round(retryBuffer*100);
       const stressPct=Math.round(stressBuffer*100);
-      note.innerHTML=`* Khoảng dự phòng = base → +${pct}% buffer cho context đồng bộ, retry nhẹ và adaptive split. Nếu lỗi JSON/tag nhiều, chi phí có thể lên gần mức “lỗi nặng” (+${stressPct}%). Dedup đã trừ duplicate rows. Giá chỉ là tham khảo theo bảng trong tool.`;
+      note.innerHTML=`* Khoảng dự phòng = base → +${pct}% buffer cho context đồng bộ, retry nhẹ và adaptive split. Nếu JSON hư nhiều, chi phí có thể lên gần mức recovery (+${stressPct}%). Dedup đã trừ duplicate rows. Giá chỉ là tham khảo theo bảng trong tool.`;
     }
   }
 
@@ -3193,12 +3231,16 @@ function clearFile(){
    42K PATCH ENGINE — adaptive split + semantic sync
 ══════════════════════════════════════════ */
 function calcMaxOutTokens(lines, lang=currentLang){
-  // Legacy-style output budget: close to the old cheap formula, with a bit more room for AR/DE/KM.
+  // v8.3.2 cost-opt:
+  // Give enough output room up front so a large patch finishes in ONE call.
+  // max_tokens is only a ceiling, not charged unless produced; too-low ceilings cause paid failed calls + split.
   const chars=lines.join('\n').length;
-  const charFactor={vi:0.58,ar:0.78,ko:0.65,tr:0.72,km:1.25,de:0.85}[lang]||0.75;
-  const byChars=Math.ceil(chars*charFactor)+lines.length*7+350;
-  const hardCap=(lang==='km')?14000:12000;
-  return Math.min(hardCap,Math.max(512,byChars));
+  const charFactor={vi:0.66,ar:1.08,ko:0.74,tr:0.82,km:1.35,de:0.95}[lang]||0.78;
+  const linePad=(lang==='ar'||lang==='km')?10:8;
+  const basePad=(lang==='ar'||lang==='km'||lang==='de')?700:520;
+  const byChars=Math.ceil(chars*charFactor)+lines.length*linePad+basePad;
+  const hardCap=(lang==='km')?15000:16000;
+  return Math.min(hardCap,Math.max(768,byChars));
 }
 function responseFormatForModel(model){
   // v8.3: disable json_schema/json_object overhead. Prompt + repairJSON handles array/object outputs.
@@ -3217,7 +3259,7 @@ function buildSemanticSyncContext(batch,type){
   }
   let ctx='\n\nCONSISTENCY: keep terms, names, pronouns and tone consistent with earlier rows. Do not reinterpret story per patch.';
   if(mem.length) ctx+='\nPREVIOUS ACCEPTED TRANSLATIONS (context only):\n'+mem.join('\n');
-  return ctx.slice(0,1200);
+  return ctx.slice(0,850);
 }
 function isSplitworthyError(err){
   return /JSON|repairJSON|Cannot repair|MODEL_OUTPUT_TRUNCATED|Output count|length mismatch|Parser guard|Unterminated|Unexpected end/i.test(String(err&&err.message||err));
@@ -3318,16 +3360,17 @@ async function translateOnePatch(batch,ctx,depth=0,label=''){
   let structRetries=0;
   while(true){
     let raw=await callAPI();
-    try{arr=repairJSON(raw,lines.length);}
+    try{arr=prompt.protocol==='line'?parseLineOutput(raw,lines.length):repairJSON(raw,lines.length);}
     catch(parseErr){
       // Cheap mode: do not retry the same large patch. Split immediately.
       if(lines.length>35){
-        logError(batchNo-1,'json','JSON lỗi → chẻ nhỏ, không retry cùng size để tiết kiệm: '+parseErr.message);
+        logError(batchNo-1,'line','Line parse lỗi → chẻ nhỏ, không retry cùng size để tiết kiệm: '+parseErr.message);
         throw parseErr;
       }
-      logError(batchNo-1,'json','small patch JSON retry once: '+parseErr.message);
-      raw=await callAPI(baseSys+'\n\nSTRICT JSON RETRY: Output ONLY a JSON array of exactly '+lines.length+' '+prof.name+' strings. No numbering. No markdown. No explanation.');
-      arr=repairJSON(raw,lines.length);
+      logError(batchNo-1,'line','small patch line retry once: '+parseErr.message);
+      const retrySys=baseSys+'\n\nSTRICT LINE RETRY: Output ONLY '+lines.length+' lines. Each line: id<TAB>translation. No JSON. No numbering besides the id. No markdown. No explanation.';
+      raw=await callAPI(retrySys);
+      arr=prompt.protocol==='line'?parseLineOutput(raw,lines.length):repairJSON(raw,lines.length);
     }
     arr=arr.map(s=>stripInternalTypeLabels(String(s||'').replace(/^\s*\[\d+\]\s*/,''),''));
     if(arr[0]==='items')throw new Error('Parser guard: object key items leaked into translations');
@@ -3496,7 +3539,7 @@ async function translateAll(){
   let nextBatchIndex=0,lastUiUpdate=0,lastRenderAt=0;
   const workerStates=Array.from({length:workers},(_,i)=>({id:i+1,text:'sẵn sàng',cls:'wait'}));
   setWorkerPanelVisible(workers>1);updateWorkerPanel(workerStates);
-  st.textContent=`Đã chia ${pending.length.toLocaleString('vi')} dòng thành ${totalBatches.toLocaleString('vi')} patch · Legacy Cost ${workers} luồng · batch lớn hơn, không json_schema, ít retry API, có cost meter thực tế.`;st.className='st ok';
+  st.textContent=`Đã chia ${pending.length.toLocaleString('vi')} dòng thành ${totalBatches.toLocaleString('vi')} patch · v8.3.2 Cost-Opt ${workers} luồng · prompt gọn hơn, max_tokens đủ rộng để tránh fail-call, local QA giữ tag/code, có cost meter thực tế.`;st.className='st ok';
 
   const refreshProgress=()=>{
     const now=Date.now();
