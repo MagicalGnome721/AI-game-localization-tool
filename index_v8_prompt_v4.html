@@ -1,7 +1,7 @@
 <html lang="vi"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>AI Game Localization Tool v8.3 — Legacy Cost · VI · AR · KO · TR · KM · DE</title>
+<title>AI Game Localization Tool v8.3.3 — Line Cost Estimate Fix · VI · AR · KO · TR · KM · DE</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Khmer:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -191,7 +191,7 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
 <div class="page">
 
 <header>
-  <h1>AI Game Localization Tool <span style="color:var(--text3);font-weight:400;font-size:13px;">v8.3 Pro · Legacy Cost</span></h1>
+  <h1>AI Game Localization Tool <span style="color:var(--text3);font-weight:400;font-size:13px;">v8.3.3 Pro · Estimate Fix</span></h1>
   <small>Kiến trúc: Typo Fix → Token Protect → Global Glossary → Lang Glossary → Lang Prompt → LLM → Restore Tokens → Post-Process → QA</small>
 </header>
 
@@ -325,7 +325,7 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
             <option value="3">3 — nhanh</option>
             <option value="4">4 — thử nghiệm</option>
           </select>
-          <div style="font-size:10px;color:var(--text3);line-height:1.45;margin-top:5px;">v8.3.2 cost-opt: ưu tiên 2 luồng. Tối ưu để giảm fail-call, giữ đúng tag/code bằng local QA.</div>
+          <div style="font-size:10px;color:var(--text3);line-height:1.45;margin-top:5px;">v8.3.3 cost-opt: ước tính chi phí đã tính overhead theo từng API call/batch + hệ số output riêng từng ngôn ngữ.</div>
         </div>
         <div class="sc">
           <div class="sc-t">PHONG CÁCH (áp cố định toàn bộ)</div>
@@ -2979,9 +2979,15 @@ function updateCostEstimate(){
   // Content tokens (unique source text only)
   const contentTok=uniqueRows.reduce((s,r)=>s+tok(r.en),0);
 
-  // System prompt + JSON wrapper per patch
+  // System prompt + line-protocol wrapper per patch
   const sysPromptTok=tok(prof.systemPrompt);
-  const sysOverhead=numBatches*(sysPromptTok+20);
+  // v8.3.3 estimate fix:
+  // The old formula counted system/prompt almost once, but every API call pays
+  // system prompt + line protocol + format rules + id/type wrappers again.
+  // This per-batch overhead is calibrated from real usage meter runs.
+  const lineProtocolOverhead={vi:420,ko:500,tr:480,ar:820,km:680,de:560}[currentLang]||520;
+  const rowProtocolOverhead=uniqueRows.length*2; // id<TAB>type<TAB> wrappers in user prompt
+  const sysOverhead=numBatches*(sysPromptTok+20+lineProtocolOverhead)+rowProtocolOverhead;
 
   // 42k fixed mode injects semantic sync context per patch.
   // Estimate it BEFORE translation: fixed rule + up to 10 previous EN=>target pairs, capped like buildSemanticSyncContext().
@@ -3003,9 +3009,11 @@ function updateCostEstimate(){
     });
   });
 
-  // Base output tokens
+  // Base output tokens. v8.3.3 uses language-specific real-output multipliers,
+  // because Arabic/Khmer/German tokenize and expand very differently from English.
+  const outputTokRatio={vi:1.05,ko:1.30,tr:1.25,ar:2.20,km:1.85,de:1.45}[currentLang]||(prof.tokRatio||1.25);
   const totalIn=contentTok+sysOverhead+contextTok+glossTok;
-  const totalOut=Math.round(contentTok*prof.tokRatio);
+  const totalOut=Math.round(contentTok*outputTokRatio);
   const grandTotal=totalIn+totalOut;
 
   // Cost range for 42k mode:
@@ -3081,7 +3089,7 @@ function updateCostEstimate(){
     if(note){
       const pct=Math.round(retryBuffer*100);
       const stressPct=Math.round(stressBuffer*100);
-      note.innerHTML=`* Khoảng dự phòng = base → +${pct}% buffer cho context đồng bộ, retry nhẹ và adaptive split. Nếu JSON hư nhiều, chi phí có thể lên gần mức recovery (+${stressPct}%). Dedup đã trừ duplicate rows. Giá chỉ là tham khảo theo bảng trong tool.`;
+      note.innerHTML=`* v8.3.3: Estimate đã tính prompt/context/glossary theo từng batch/API call và hệ số output riêng cho từng ngôn ngữ. Khoảng dự phòng = base → +${pct}% cho recovery/split nhẹ. Nếu output hư nhiều có thể gần mức recovery (+${stressPct}%). Dedup đã trừ duplicate rows. Giá chỉ là tham khảo theo bảng trong tool.`;
     }
   }
 
