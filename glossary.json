@@ -29,8 +29,86 @@
       "tgt": "mẹ"
     }
   ],
-  "ar": [],
+  "ar": [
+    {
+      "en": "Lancer",
+      "tgt": "رامح"
+    },
+    {
+      "en": "Assault Lancer",
+      "tgt": "رامح هجومي"
+    },
+    {
+      "en": "Defense Lancer",
+      "tgt": "رامح دفاعي"
+    },
+    {
+      "en": "Hun Assault Lancer",
+      "tgt": "رامح الهون الهجومي"
+    },
+    {
+      "en": "Hun Defense Lancer",
+      "tgt": "رامح الهون الدفاعي"
+    },
+    {
+      "en": "Glaive",
+      "tgt": "حربة"
+    },
+    {
+      "en": "Firm",
+      "tgt": "فصيل"
+    },
+    {
+      "en": "Firm task",
+      "tgt": "مهمة الفصيل"
+    },
+    {
+      "en": "Firm's daily task",
+      "tgt": "مهمة الفصيل اليومية"
+    },
+    {
+      "en": "Golem",
+      "tgt": "غول"
+    },
+    {
+      "en": "Rock Golem",
+      "tgt": "غول الصخور"
+    },
+    {
+      "en": "Stone Golem",
+      "tgt": "غول حجري"
+    },
+    {
+      "en": "Master",
+      "tgt": "خبير"
+    },
+    {
+      "en": "Master of Martial Arts",
+      "tgt": "خبير فنون القتال"
+    },
+    {
+      "en": "Master Elixir",
+      "tgt": "إكسير الإتقان"
+    },
+    {
+      "en": "Chest",
+      "tgt": "صندوق"
+    },
+    {
+      "en": "Accumulated Chest",
+      "tgt": "صندوق تراكمي"
+    },
+    {
+      "en": "Dragon Jade",
+      "tgt": "يشم التنين"
+    },
+    {
+      "en": "Boss Rush",
+      "tgt": "اندفاع الزعماء"
+    }
+  ],
   "ko": [],
   "tr": [],
-  "km": []
+  "km": [],
+  "de": []
 }
