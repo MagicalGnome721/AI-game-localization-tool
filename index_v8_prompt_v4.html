@@ -1,7 +1,7 @@
 <html lang="vi"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>AI Game Localization Tool v8.3.3 — Line Cost Estimate Fix · VI · AR · KO · TR · KM · DE</title>
+<title>AI Game Localization Tool v8.5.7 — Release Re-Audit · QA Gate · Error Filter · Run Cost · VI · AR · KO · TR · KM · DE</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Khmer:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -138,6 +138,8 @@ code{background:var(--bg2);padding:1px 4px;border-radius:3px;font-size:10px;}
 /* Stale rows — đã dịch rồi nhưng glossary thay đổi, cần dịch lại */
 .stale-row td{opacity:0.55;}
 .stale-row td.en-c{opacity:1;}
+.error-row td{background:rgba(163,45,45,0.07);}
+.error-row:hover td{background:rgba(163,45,45,0.12)!important;}
 .t-stale{background:var(--w-bg);color:var(--w-tx);}
 .gloss-notice{display:none;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;background:var(--w-bg);border:.5px solid var(--w-br);border-radius:var(--rl);font-size:11px;color:var(--w-tx);}
 /* Lang Tabs */
@@ -191,15 +193,15 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
 <div class="page">
 
 <header>
-  <h1>AI Game Localization Tool <span style="color:var(--text3);font-weight:400;font-size:13px;">v8.3.3 Pro · Estimate Fix</span></h1>
-  <small>Kiến trúc: Typo Fix → Token Protect → Global Glossary → Lang Glossary → Lang Prompt → LLM → Restore Tokens → Post-Process → QA</small>
+  <h1>AI Game Localization Tool <span style="color:var(--text3);font-weight:400;font-size:13px;">v8.5.7 Pro · Release Re-Audit · Run Cost + Retry Estimate · QA Gate</span></h1>
+  <small>Kiến trúc: Source EN/VI → Mode → Typo Fix → Token Protect → Glossary → LLM → Restore Tokens → Post-Process → QA</small>
 </header>
 
 <!-- LANG SELECTOR -->
 <div class="card">
   <div class="head">
     <div class="ht">Ngôn ngữ đích</div>
-    <div style="font-size:10px;color:var(--text3);">Chọn ngôn ngữ → tự động load prompt + glossary</div>
+    <div style="font-size:10px;color:var(--text3);">Chọn ngôn ngữ đích → prompt/glossary tự đổi theo Source + Mode</div>
   </div>
   <div class="body" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
     <div class="lang-tabs" id="lang-tabs">
@@ -214,22 +216,57 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
   </div>
 </div>
 
+<!-- SOURCE + MODE SELECTOR -->
+<div class="card">
+  <div class="head">
+    <div class="ht">Nguồn &amp; Chế độ dịch</div>
+    <div style="font-size:10px;color:var(--text3);">RẺ · NHANH · CHUẨN: ưu tiên cache/dedup/local glossary trước, API chỉ xử lý phần cần hiểu nghĩa</div>
+  </div>
+  <div class="body">
+    <div class="sg">
+      <div class="sc">
+        <div class="sc-t">SOURCE LANGUAGE</div>
+        <select id="source-lang" style="width:100%;font-size:12px;padding:4px 8px;" onchange="setSourceLang(this.value)">
+          <option value="en" selected>English — nguồn gốc</option>
+          <option value="vi">Vietnamese — bản Việt đã localize</option>
+        </select>
+        <div style="font-size:10px;color:var(--text3);line-height:1.45;margin-top:5px;">VI source sẽ dùng anti-literal prompt để tránh dịch sát chữ Hán Việt.</div>
+      </div>
+      <div class="sc">
+        <div class="sc-t">TRANSLATION MODE</div>
+        <select id="translation-mode" style="width:100%;font-size:12px;padding:4px 8px;" onchange="setTranslationMode(this.value)">
+          <option value="faithful">Faithful — sát nghĩa, an toàn</option>
+          <option value="localization" selected>Localization — tự nhiên theo ngôn ngữ đích</option>
+          <option value="fantasy">Fantasy Transcreation — item/name/cổ phong</option>
+        </select>
+        <div style="font-size:10px;color:var(--text3);line-height:1.45;margin-top:5px;">Mode được nhúng vào prompt + cache key, nên đổi mode sẽ không ăn nhầm cache cũ.</div>
+      </div>
+      <div class="sc">
+        <div class="sc-t">PAIR HIỆN TẠI</div>
+        <div id="pair-status" style="font-size:13px;font-weight:600;color:var(--i-tx);line-height:1.5;">English → Tiếng Việt · Localization</div>
+        <div id="pair-warning" style="font-size:10px;color:var(--w-tx);line-height:1.45;margin-top:5px;display:none;">⚠ Nguồn và đích đang cùng ngôn ngữ — chỉ dùng để test, không nên chạy production.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- API CONFIG -->
 <div class="card">
   <div class="head">
-    <div class="ht"><span id="api-dot" style="width: 7px; height: 7px; border-radius: 50%; background: rgb(99, 153, 54); display: inline-block; flex-shrink: 0;"></span>Cấu hình API</div>
+    <div class="ht"><span id="api-dot" style="width: 7px; height: 7px; border-radius: 50%; background:#9e9d99; display:inline-block; flex-shrink:0;"></span>Cấu hình API</div>
     <span id="mdl-badge" class="tag t-si" style="display: inline-block;">gpt-4o-mini</span>
   </div>
   <div class="body">
     <div style="display:grid;grid-template-columns:1fr 160px 80px;gap:8px;align-items:end;">
       <div>
         <div class="lbl">Khóa API OpenAI</div>
-        <input type="password" id="api-key" placeholder="sk-..." autocomplete="off">
+        <input type="password" id="api-key" placeholder="sk-... hoặc sk-proj-..." autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="text" oninput="onApiKeyInput()" onpaste="setTimeout(onApiKeyInput,0)">
       </div>
       <div>
         <div class="lbl">Mô hình</div>
         <select id="mdl-main">
           <option value="gpt-4o-mini" selected="">gpt-4o-mini</option>
+          <option value="gpt-4.1-nano">gpt-4.1-nano — rẻ nhất</option>
           <option value="gpt-4o">gpt-4o</option>
           <option value="gpt-4.1-mini">gpt-4.1-mini</option>
           <option value="gpt-4.1">gpt-4.1</option>
@@ -238,7 +275,7 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
       </div>
       <div style="padding-top:18px;"><button class="btn" onclick="testApi()">Test</button></div>
     </div>
-    <div id="api-st" class="st ok">Đã kết nối ✓</div>
+    <div id="api-st" class="st wt">Chưa nhập API key.</div>
   </div>
 </div>
 
@@ -325,7 +362,7 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
             <option value="3">3 — nhanh</option>
             <option value="4">4 — thử nghiệm</option>
           </select>
-          <div style="font-size:10px;color:var(--text3);line-height:1.45;margin-top:5px;">v8.3.3 cost-opt: ước tính chi phí đã tính overhead theo từng API call/batch + hệ số output riêng từng ngôn ngữ.</div>
+          <div style="font-size:10px;color:var(--text3);line-height:1.45;margin-top:5px;">v8.5.7: Model Quality Ultra-Low-Cost — glossary hard-lock, API only for unknown meaning.</div>
         </div>
         <div class="sc">
           <div class="sc-t">PHONG CÁCH (áp cố định toàn bộ)</div>
@@ -356,6 +393,14 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
             <label class="tgl"><input type="checkbox" id="use-typo" checked=""><span class="tgl-s"></span></label>
             <span style="color:var(--text2);">Sửa lỗi trước khi dịch</span>
           </div>
+        </div>
+        <div class="sc">
+          <div class="sc-t">SMART TEMPLATE DEDUP</div>
+          <div class="tgl-row">
+            <label class="tgl"><input type="checkbox" id="use-smart-dedup" checked onchange="updateCostEstimate()"><span class="tgl-s"></span></label>
+            <span style="color:var(--text2);">Gom câu chỉ khác số/%/Lv/+n</span>
+          </div>
+          <div style="font-size:10px;color:var(--text3);line-height:1.45;margin-top:5px;">Chạy local, không tốn API. Ví dụ: level 10/20/30 → level {NUM} rồi bung lại.</div>
         </div>
         <div class="sc">
           <div class="sc-t">MÔ HÌNH KÉP</div>
@@ -408,13 +453,13 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
         💡 <strong>Glossary tùy chỉnh</strong> — thêm/sửa ở đây để ghi đè glossary embedded. Xong thì bấm <strong>💾 Lưu HTML + Glossary</strong> → tải về file HTML mới có glossary nhúng sẵn → gửi file đó cho người khác, họ mở ra là có glossary của bạn luôn.
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:6px;align-items:end;">
-        <div><div class="lbl">Tiếng Anh</div><input type="text" id="gs" placeholder="vd. Bracer"></div>
+        <div><div class="lbl" id="gloss-src-lbl">Nguồn</div><input type="text" id="gs" placeholder="vd. Bracer / Long Hồn..."></div>
         <div><div class="lbl" id="gloss-tgt-lbl">Bản dịch — Tiếng Việt</div><input type="text" id="gt" placeholder="Bản dịch Tiếng Việt…" style="direction: ltr;"></div>
         <div style="padding-top:18px;"><button class="btn btn-p" onclick="addGloss()">Thêm</button></div>
       </div>
       <div class="divider"></div>
       <div class="gs"><table class="gt">
-        <thead><tr><th>#</th><th>Tiếng Anh</th><th id="gloss-tgt-col">Tiếng Việt</th><th></th></tr></thead>
+        <thead><tr><th>#</th><th id="gloss-src-col">Nguồn</th><th id="gloss-tgt-col">Tiếng Việt</th><th></th></tr></thead>
         <tbody id="gbody"><tr>
     <td style="color:var(--text3)">1</td>
     <td style="font-weight:500">Dark Goddess Palace</td>
@@ -501,7 +546,7 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
       </div>
       <div class="tok-item">
         <div class="tok-v" id="est-unique-v" style="color:var(--s-tx)">22</div>
-        <div class="tok-l">unique (sau dedup)</div>
+        <div class="tok-l">API units (dedup/template)</div>
       </div>
       <div class="tok-item">
         <div class="tok-v" id="est-batches-v">1</div>
@@ -598,7 +643,7 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
       </table>
     </div>
     <div class="cost-note" id="cost-note">
-      * Khoảng dự phòng gồm prompt/context đồng bộ + retry nhẹ. Nếu lỗi JSON/tag nhiều và patch bị chẻ liên tục, chi phí có thể vượt khoảng này. Giá chỉ là tham khảo theo bảng trong tool.
+      * Khoảng dự phòng gồm source/mode prompt + context đồng bộ + retry nhẹ. Nếu lỗi JSON/tag nhiều và patch bị chẻ liên tục, chi phí có thể vượt khoảng này. Giá chỉ là tham khảo theo bảng trong tool.
     </div>
   </div>
 </div>
@@ -609,6 +654,10 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
   <button class="btn btn-d" id="stop-btn" style="display: inline-block;" onclick="stopTranslate()" disabled="">⏹ Dừng</button>
   <button class="btn btn-s" id="exp-btn" style="display: inline-block;" onclick="exportExcel()">Xuất Excel</button>
   <button class="btn btn-w" id="retry-btn" style="display:none;" onclick="retryErrors()">Thử lại lỗi</button>
+  <button class="btn btn-sm" id="err-filter-btn" style="display:none;" onclick="setTableFilter(tableFilter==='hard'?'all':'hard')">Hiện dòng lỗi</button>
+  <button class="btn btn-sm" id="qa-filter-btn" style="display:none;" onclick="setTableFilter(tableFilter==='soft'?'all':'soft')">QA cảnh báo</button>
+  <button class="btn btn-sm" id="pending-filter-btn" style="display:none;" onclick="setTableFilter(tableFilter==='pending'?'all':'pending')">Chờ dịch</button>
+  <button class="btn btn-sm" id="all-filter-btn" style="display:none;" onclick="setTableFilter('all')">Tất cả</button>
   <div class="pw" style="display: block;" id="pw"><div class="pf" id="pf" style="width: 100%;"></div></div>
   <span id="sumrow" style="font-size:11px;"><span class="tag t-ok">22 xong</span></span>
 </div>
@@ -620,6 +669,14 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
   <div class="stat"><div class="stat-v" id="sv-calls">0</div><div class="stat-l">API calls</div></div>
   <div class="stat"><div class="stat-v" id="sv-qa">17</div><div class="stat-l">QA cảnh báo</div></div>
   <div class="stat"><div class="stat-v" id="sv-save">~0%</div><div class="stat-l">Token tiết kiệm</div></div>
+</div>
+<div class="stats" id="runtime-row" style="display:flex;">
+  <div class="stat"><div class="stat-v" id="rt-state">Sẵn sàng</div><div class="stat-l">Trạng thái run</div></div>
+  <div class="stat"><div class="stat-v" id="rt-progress">0/0</div><div class="stat-l">Hoàn tất / tổng</div></div>
+  <div class="stat"><div class="stat-v" id="rt-spent">$0.0000</div><div class="stat-l">Đã dùng thật</div></div>
+  <div class="stat"><div class="stat-v" id="rt-tokens">0 / 0</div><div class="stat-l">Input / output tok</div></div>
+  <div class="stat"><div class="stat-v" id="rt-retry-rows">0</div><div class="stat-l">Cần retry</div></div>
+  <div class="stat"><div class="stat-v" id="rt-retry-cost">$0.0000</div><div class="stat-l">Ước tính retry</div></div>
 </div>
 <div id="tst" class="st ok">Cache hit — 0 API calls!</div>
 <div id="worker-status" class="worker-status"></div>
@@ -641,7 +698,7 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
     <table class="tbl">
       <thead><tr>
         <th class="n-c">#</th>
-        <th>Tiếng Anh</th>
+        <th id="src-col-hdr">Nguồn</th>
         <th>LLM Output</th>
         <th id="tbl-pp-hdr" style="color:var(--s-tx);">✦ Post-Processed (Tiếng Việt)</th>
         <th class="s-c">ST</th>
@@ -833,7 +890,7 @@ input:checked+.tgl-s:before{transform:translateX(16px);background:var(--s-tx);}
    - Backtick code snippets: `code`
    Flow: protectAll → LLM → restoreAll
 ══════════════════════════════════════════ */
-const TOKEN_REGEX = /<[^>\r\n]{1,240}>|\{[^}\r\n]{1,160}\}|%(?:\d+\$)?[A-Za-z][A-Za-z0-9_]*|\[[^\]\r\n]{0,180}\]|`[^`\r\n]{1,180}`/g;
+const TOKEN_REGEX = /<[^>\r\n]{1,240}>|\{[^}\r\n]{1,160}\}|%(?:\d+\$)?(?:[-+#0 ]*\d*(?:\.\d+)?[sdifuoxX])|\[[^\]\r\n]{0,180}\]|`[^`\r\n]{1,180}`/g;
 
 function protectAll(text) {
   const map = [];
@@ -898,7 +955,7 @@ function joinWithEnter(parts) { return parts.join('<enter>'); }
 /* ══════════════════════════════════════════
    GLOBAL STATE
 ══════════════════════════════════════════ */
-let rows=[],customGlossByLang={vi:[],ar:[],ko:[],tr:[],km:[],de:[]},cache=new Map(),wb=null,wsName=null,headers=[],colIdx=0,currentFilename='';
+let rows=[],customGlossByLang={vi:[],ar:[],ko:[],tr:[],km:[],de:[]},customGlossByPair={},cache=new Map(),wb=null,wsName=null,headers=[],colIdx=0,currentFilename='';
 
 function getLangGloss(){return customGlossByLang[currentLang]||(customGlossByLang[currentLang]=[]);}
 function normalizeGlossEntry(g, lang=currentLang){
@@ -924,6 +981,7 @@ function ensureGlossLoaded(lang=currentLang){
   // Embedded glossary là glossary đã lưu vào HTML. Khi mở file hoặc đổi ngôn ngữ,
   // copy nó vào bảng Glossary Tùy Chỉnh nếu bảng đang trống để user nhìn thấy và sửa được.
   if(!customGlossByLang)customGlossByLang={vi:[],ar:[],ko:[],tr:[],km:[],de:[]};
+  if(typeof customGlossByPair==='undefined'||!customGlossByPair)customGlossByPair={};
   customGlossByLang[lang]=normalizeGlossArray(customGlossByLang[lang]||[],lang);
   const emb=normalizeGlossArray(EMBEDDED_GLOSS_BY_LANG[lang]||[],lang);
   if(!customGlossByLang[lang].length && emb.length){
@@ -933,6 +991,8 @@ function ensureGlossLoaded(lang=currentLang){
 }
 let apiCallCount=0,savedTok=0,totalTok=0,abortFlag=false,ppCount=0;
 let runInputTok=0,runOutputTok=0,runCostUSD=0;
+let runStartedAt=0,runFinishedAt=0,lastRetryEstimate=null;
+let qaRetryCount=0,qaFinalBlockCount=0,qaAutoFixedCount=0;
 let activeApiControllers=new Set();
 function getParallelWorkers(){
   const el=document.getElementById('parallel-workers');
@@ -967,15 +1027,17 @@ function showRuntimeError(prefix,err){
 window.addEventListener('error',e=>showRuntimeError('JS lỗi',e.error||e.message));
 window.addEventListener('unhandledrejection',e=>showRuntimeError('Promise lỗi',e.reason||e));
 let currentLang='vi';
+let sourceLang='en';
+let translationMode='localization';
 // 42k-row mode: render table by page so the browser does not freeze.
-let tablePage=0, tablePageSize=300;
+let tablePage=0, tablePageSize=300, tableFilter='all';
 
 /* ── EMBEDDED CUSTOM GLOSSARY ──────────────────────────────────────
    Biến này được ghi tự động khi bấm "Lưu HTML + Glossary".
    Khi mở file, glossary sẽ tự load vào công cụ.
    KHÔNG chỉnh tay — dùng nút trong UI.
 ─────────────────────────────────────────────────────────────────── */
-const EMBEDDED_GLOSS_BY_LANG = {"vi":[{"en":"Dark Goddess Palace","tgt":"Hắc Ám Nữ Thần Cung"},{"en":"Guild Master","tgt":"Bang Chủ"},{"en":"Dragon Soul Forbidden Land Ticket","tgt":"Long Hồn Cấm Địa Lệnh"},{"en":"Stable Master","tgt":"Trại Chủ"},{"en":"Silk Road","tgt":"Con Đường Tơ Lụa"}],"ar":[],"ko":[],"tr":[],"km":[],"de":[]}; /* __GLOSS_DATA__ */
+const EMBEDDED_GLOSS_BY_LANG = {"vi":[{"en":"Dark Goddess Palace","tgt":"Hắc Ám Nữ Thần Cung"},{"en":"Guild Master","tgt":"Bang Chủ"},{"en":"Dragon Soul Forbidden Land Ticket","tgt":"Long Hồn Cấm Địa Lệnh"},{"en":"Stable Master","tgt":"Trại Chủ"},{"en":"Silk Road","tgt":"Con Đường Tơ Lụa"}],"ar":[{"en":"Lancer","tgt":"رامح"},{"en":"Assault Lancer","tgt":"رامح هجومي"},{"en":"Defense Lancer","tgt":"رامح دفاعي"},{"en":"Hun Assault Lancer","tgt":"رامح الهون الهجومي"},{"en":"Hun Defense Lancer","tgt":"رامح الهون الدفاعي"},{"en":"Glaive","tgt":"حربة"},{"en":"Firm","tgt":"فصيل"},{"en":"Firm task","tgt":"مهمة الفصيل"},{"en":"Firm's daily task","tgt":"مهمة الفصيل اليومية"},{"en":"Golem","tgt":"غول"},{"en":"Rock Golem","tgt":"غول الصخور"},{"en":"Stone Golem","tgt":"غول حجري"},{"en":"Master","tgt":"خبير"},{"en":"Master of Martial Arts","tgt":"خبير فنون القتال"},{"en":"Master Elixir","tgt":"إكسير الإتقان"},{"en":"Chest","tgt":"صندوق"},{"en":"Accumulated Chest","tgt":"صندوق تراكمي"},{"en":"Dragon Jade","tgt":"يشم التنين"},{"en":"Boss Rush","tgt":"اندفاع الزعماء"},{"en":"Normal","tgt":"عادي"},{"en":"Adventure","tgt":"مغامرة"},{"en":"Difficult","tgt":"صعب"},{"en":"Hell","tgt":"جحيم"},{"en":"Nightmare","tgt":"كابوس"},{"en":"Infinite Nightmare","tgt":"كابوس لا نهائي"},{"en":"Critical Damage","tgt":"ضرر حرج"},{"en":"Stun","tgt":"صعق"},{"en":"Top 5","tgt":"أفضل 5"},{"en":"Tab","tgt":"تبويب"},{"en":"Voice Guild Party","tgt":"حفلة النقابة الصوتية"},{"en":"Mentalist","tgt":"ساحر ذهني"},{"en":"Rogue","tgt":"مارق"},{"en":"Evil Assassin","tgt":"قاتل شرير"},{"en":"Lair","tgt":"العرين"},{"en":"Dark Abyss","tgt":"الهاوية المظلمة"},{"en":"Continental Exploration","tgt":"استكشاف القارة"},{"en":"String","tgt":"نص"},{"en":"Text Old","tgt":"نص قديم"},{"en":"Adventure Mode","tgt":"وضع المغامرة"},{"en":"Arena","tgt":"الساحة"},{"en":"Shop","tgt":"المتجر"},{"en":"Store","tgt":"المتجر"},{"en":"Menu","tgt":"القائمة"},{"en":"Point","tgt":"نقطة"},{"en":"Points","tgt":"نقاط"},{"en":"Weapons","tgt":"أسلحة"},{"en":"Weapon","tgt":"سلاح"}],"ko":[],"tr":[],"km":[],"de":[]}; /* __GLOSS_DATA__ */
 
 /* ══════════════════════════════════════════
    KNOWN TYPOS (Phase 1 — input cleaning)
@@ -1038,27 +1100,32 @@ const LANG_PROFILES = {
     get systemPrompt(){return this.prompts.weapon;},
     prompts:{
       weapon:
-`Translate each English weapon/item name into wuxia-style Vietnamese.
-- Use Sino-Vietnamese (Hán Việt) — NOT modern Vietnamese
-- Max 4–5 syllables. Structure: [Thuộc tính]+[Yếu tố]+[Loại vũ khí]
-- NEVER use "của". NEVER translate literally.
+`Localize each English weapon/item/title name into natural Vietnamese cổ trang / kiếm hiệp game style.
+- Goal: short, powerful, readable item names; NOT word-by-word translation.
+- Use Hán Việt fantasy compounds when the source is an item, weapon, skill, faction, place, title, or quest token.
+- Max 4–6 syllables unless the source is a full proper noun. Structure: [Thuộc tính]+[Yếu tố]+[Loại]
+- NEVER use “của” in item/name compounds. Avoid modern casual words.
 - Weapon type LOCK: Sword→Kiếm|Blade→Đao|Spear→Thương|Lance→Thương|Pike→Mâu|Glaive→Kích|Halberd→Kích|Polearm→Trường Khí|Bow→Cung|Crescent→Nha Nguyệt Đao
-Examples: Evil Flame Spear→Ma Diệm Thương | Dragon Blade→Long Đao | Hellfire Devil Sword→Địa Hỏa Ma Kiếm
+- If the source is a normal UI label/difficulty/status, keep it concise and natural, do not invent weapon/equipment words.
+Examples: Evil Flame Spear→Ma Diệm Thương | Dragon Blade→Long Đao | Hellfire Devil Sword→Địa Hỏa Ma Kiếm | Forbidden Land Ticket→Cấm Địa Lệnh
 Return ONLY a JSON array, same length as input. No explanation.`,
 
       dialogue:
-`Translate each NPC dialogue line into natural wuxia-flavored Vietnamese.
-- Keep full meaning — do NOT shorten or summarize
-- Slightly cổ phong but easy to understand
-- Avoid machine-translation tone
-- PRONOUNS: Follow the PRONOUN RULE injected at the end of this prompt EXACTLY — it overrides all other pronoun guidance
-  · "we/us/our" → chúng ta (ALWAYS — never "ta" alone for "we")
-  · "sir/lord/ambassador" → ngài | đại nhân
-- Preserve placeholders (%s %d {0}) exactly as-is
-- Keep pipe separator | between parts if present
-Examples (WITHOUT token protection, for reference only):
-  Hello, where do you want to go? → Xin chào, bạn muốn đến đâu?
-  Hello sir, can you give me advice? → Thưa ngài, ngài có thể chỉ điểm cho tôi không?
+`Localize each NPC dialogue line into natural Vietnamese cổ trang / kiếm hiệp game style.
+- Keep full meaning — do NOT shorten, summarize, or add missing lore.
+- Sound like a polished fantasy game localization, not Google Translate.
+- Natural cổ trang: trang trọng, gọn, có khí chất, nhưng vẫn dễ hiểu.
+- Prefer “ngài” for player-facing you. Avoid “bạn” unless the source is clearly modern/casual UI.
+- NPC self-reference: use “ta” when the speaker sounds authoritative/ancient; use “tôi” for neutral guide/service NPCs. Keep “chúng ta” for we/us/our.
+- “Traveler” → “Du Khách”; “sir/lord/ambassador” → “ngài / đại nhân / sứ giả” depending context.
+- Rewrite English idioms naturally, never literally. Examples: from time to time → thỉnh thoảng; what you’re getting into → chuyện mình sắp dấn thân vào; don’t let it go to waste → đừng để uổng phí.
+- Preserve placeholders (%s %d {0}) exactly as-is.
+- Keep pipe separator | between parts if present.
+Examples:
+  Hello, where do you want to go? → Xin chào, ngài muốn đến nơi nào?
+  Hello sir, can you give me advice? → Thưa ngài, xin chỉ điểm cho ta đôi điều được chăng?
+  You might want to explore around first. → Ngài nên thăm dò quanh đây trước.
+  Don’t let it go to waste. → Đừng để ý chí ấy uổng phí.
   We always study the worst case first. → Chúng ta luôn xét đến tình huống xấu nhất trước tiên.
 TOKEN PAIR example (CRITICAL — do NOT swap content between pairs):
   ⟨T0⟩Common⟨T1⟩ ⟨T2⟩Sword⟨T3⟩ → ⟨T0⟩Phổ Thông⟨T1⟩ ⟨T2⟩Kiếm⟨T3⟩  (each word stays in its own pair)
@@ -1066,19 +1133,22 @@ TOKEN PAIR example (CRITICAL — do NOT swap content between pairs):
 Return ONLY a JSON array, same length as input. No explanation.`,
 
       system:
-`Translate each UI/system message into clear Vietnamese.
-- Clear and concise — no stylistic rewriting
+`Localize each UI/system message into clear natural Vietnamese for a fantasy game.
+- Priority: accurate, short, functional, easy to understand.
+- Do NOT overdo cổ phong for UI/system strings.
+- Use polished game wording: “nhận thưởng”, “mở khóa”, “hoàn tất”, “tham chiến”, “thăm dò”, “rời khỏi”, “xác nhận”.
+- Avoid literal English phrases such as “từ thời gian này sang thời gian khác”, “trở nên lãng phí”, “tham gia vào những gì”.
 - Keep placeholders EXACTLY as-is: %s %d %i {0} {1}
-- Keep technical terms unchanged
-- Do NOT add wuxia flavor to UI strings
+- Keep technical terms unchanged when needed.
 Return ONLY a JSON array, same length as input. No explanation.`,
 
       multi:
-`Translate each dialogue segment into natural wuxia-flavored Vietnamese.
+`Localize each dialogue segment into natural Vietnamese cổ trang / kiếm hiệp game style.
 Each item may contain multiple sentences separated by |
-- Translate each part naturally, keep the | separator
-- PRONOUNS: Follow the PRONOUN RULE at end of prompt. we/us/our → chúng ta (ALWAYS)
-- Keep placeholders exactly
+- Translate each part naturally and independently, keep the exact | separator count and order.
+- Use “ngài” for player-facing you, avoid “bạn” unless clearly modern/casual.
+- we/us/our → chúng ta (ALWAYS)
+- Keep placeholders exactly.
 Return ONLY a JSON array, same length as input. No explanation.`,
     },
     glossary:{
@@ -1113,6 +1183,27 @@ Return ONLY a JSON array, same length as input. No explanation.`,
         [/\b(Lưỡi Kiếm)\b/g,'Đao'],
       ];
       for(const[pat,rep] of fixes)s=s.replace(pat,rep);
+      // v8.4.9: naturalize common literal EN→VI mistakes for cổ trang/dialogue output.
+      const naturalFixes=[
+        [/từ thời gian này sang thời gian khác/gi,'thỉnh thoảng'],
+        [/từ lúc này sang lúc khác/gi,'thỉnh thoảng'],
+        [/những gì ngài thực sự đang tham gia/gi,'chuyện ngài sắp dấn thân vào'],
+        [/những gì bạn thực sự đang tham gia/gi,'chuyện ngài sắp dấn thân vào'],
+        [/những gì .*? đang tham gia vào/gi,'chuyện ngài sắp dấn thân vào'],
+        [/đừng để nó trở nên lãng phí/gi,'đừng để nó uổng phí'],
+        [/đừng để điều đó trở nên lãng phí/gi,'đừng để điều đó uổng phí'],
+        [/ngài có thể muốn khám phá xung quanh/gi,'ngài nên thăm dò quanh đây'],
+        [/bạn có thể muốn khám phá xung quanh/gi,'ngài nên thăm dò quanh đây'],
+        [/mau lên và chiến đấu/gi,'hãy mau tham chiến'],
+        [/mau lên và kiểm tra/gi,'hãy mau kiểm tra'],
+        [/mau kiểm tra đi/gi,'hãy mau kiểm tra'],
+        [/gia nhập bạn bè bạn/gi,'cùng bằng hữu tham gia'],
+        [/quà tặng %s bạn/gi,'quà tặng %s của ngài'],
+        [/quà tặng %s của bạn/gi,'quà tặng %s của ngài'],
+        [/Xin chào, bạn/gi,'Xin chào, ngài'],
+        [/bạn/gi,'ngài'],
+      ];
+      for(const[pat,rep] of naturalFixes)s=s.replace(pat,rep);
       return s.trim();
     },
     postRules:[
@@ -1138,13 +1229,12 @@ Return ONLY a JSON array, same length as input. No explanation.`,
     get systemPrompt(){return this.prompts.weapon;},
     prompts:{
       weapon:
-`Translate each English weapon/item name into epic Classical Arabic fantasy style.
-- Use formal Arabic (فصحى) — NOT colloquial
-- Structure: [اسم السلاح]+[صفة] — noun first, adjective after (idhafa)
-- NEVER use "لـ" prefix
-- Prefer singular, max 4 words
-- Weapon LOCK: Sword→سيف|Blade→نصل|Spear→رمح|Lance→حربة|Pike→مزراق|Glaive→غليف|Halberd→هالبرد|Polearm→رمح طويل|Bow→قوس|Crescent→هلال
-Examples: Evil Flame Spear→رمح اللهب الجحيمي | Dragon Blade→نصل التنين | Hellfire Devil Sword→سيف الشيطان الجهنمي
+`Translate each English game localization string into accurate Modern Standard Arabic / Classical Arabic fantasy style when appropriate.
+- Translate ONLY the source text. Do NOT add implied category words such as سلاح, معدات, عنصر, وضع, مهمة, صندوق unless the English source explicitly contains that word or glossary target contains it.
+- If the source is a short UI label/difficulty/status such as Normal, Adventure, Difficult, Hell, Nightmare, translate it as the same label only.
+- For weapon terms that are explicitly present, keep them accurate: Sword→سيف|Blade→نصل|Spear→رمح|Lance→حربة|Pike→مزراق|Glaive→حربة|Halberd→هالبرد|Polearm→رمح طويل|Bow→قوس|Crescent→هلال.
+- Preserve singular/plural meaning from source. Do not make the translation longer by adding context.
+- NEVER use "لـ" prefix.
 Return ONLY a JSON array, same length as input. No explanation.`,
 
       dialogue:
@@ -1184,7 +1274,7 @@ Return ONLY a JSON array, same length as input. No explanation.`,
       'Imperial':'إمبراطوري','Lord':'سيد','Master':'سيد',
       'General':'قائد','Reaper':'الحاصد',
       'Sword':'سيف','Blade':'نصل','Spear':'رمح','Lance':'حربة',
-      'Pike':'مزراق','Glaive':'غليف','Halberd':'هالبرد','Polearm':'رمح طويل',
+      'Pike':'مزراق','Glaive':'حربة','Halberd':'هالبرد','Polearm':'رمح طويل',
       'Bow':'قوس','Crescent':'هلال',
       'Gold':'ذهب','Silver':'فضة','Iron':'حديد',
       'Copper':'نحاس','Bronze':'برونز','Jade':'يشم',
@@ -1631,6 +1721,89 @@ const MODEL_PRICING=[
   {provider:'OpenAI', id:'gpt-5',                  name:'GPT-5',                    inp:25.00,  out:75.00},
 ];
 
+
+/* ══════════════════════════════════════════
+   SOURCE LANGUAGE + TRANSLATION MODE
+   v8.4.2: English/Vietnamese source + modes + glossary bridge + API input/test hardening
+══════════════════════════════════════════ */
+const SOURCE_PROFILES={
+  en:{name:'English',viName:'Tiếng Anh',flag:'🇬🇧',code:'EN'},
+  vi:{name:'Vietnamese',viName:'Tiếng Việt',flag:'🇻🇳',code:'VI'}
+};
+const TRANSLATION_MODES={
+  faithful:{name:'Faithful',viName:'Faithful — sát nghĩa, an toàn'},
+  localization:{name:'Localization',viName:'Localization — tự nhiên theo ngôn ngữ đích'},
+  fantasy:{name:'Fantasy Transcreation',viName:'Fantasy Transcreation — item/name/cổ phong'}
+};
+function getSourceProfile(){return SOURCE_PROFILES[sourceLang]||SOURCE_PROFILES.en;}
+function getModeProfile(){return TRANSLATION_MODES[translationMode]||TRANSLATION_MODES.localization;}
+function pairKey(){return sourceLang+'>'+currentLang;}
+function pairLabel(){const sp=getSourceProfile(),tp=LANG_PROFILES[currentLang];return sp.viName+' → '+(tp?tp.viName:currentLang);}
+function setSourceLang(key){
+  sourceLang=SOURCE_PROFILES[key]?key:'en';
+  _globalStyleLock=null;
+  if(rows.length){rows.forEach(r=>{r._type=null;r.status=(r.status==='done'||r.status==='cached'||r.status==='tm')?'pending':r.status;});}
+  updateSourceModeUI();renderGloss();renderPipelinePreview();renderTable();updateCostEstimate();updatePipelineStatus();
+}
+function setTranslationMode(key){
+  translationMode=TRANSLATION_MODES[key]?key:'localization';
+  _globalStyleLock=null;
+  updateSourceModeUI();renderPipelinePreview();renderTable();updateCostEstimate();
+}
+function updateSourceModeUI(){
+  const sp=getSourceProfile(), tp=LANG_PROFILES[currentLang], mp=getModeProfile();
+  const srcSel=document.getElementById('source-lang'); if(srcSel)srcSel.value=sourceLang;
+  const modeSel=document.getElementById('translation-mode'); if(modeSel)modeSel.value=translationMode;
+  const pair=document.getElementById('pair-status'); if(pair)pair.textContent=`${sp.flag} ${sp.viName} → ${tp.flag} ${tp.viName} · ${mp.name}`;
+  const warn=document.getElementById('pair-warning'); if(warn)warn.style.display=(sourceLang===currentLang)?'block':'none';
+  const langStatus=document.getElementById('lang-status');
+  if(langStatus){
+    const activeCount=Object.keys(getActiveMergedGloss()).length;
+    langStatus.textContent='✓ Đã load: '+sp.name+' → '+tp.name+' · '+mp.name+' · '+activeCount+' active glossary terms · post-process rules';
+  }
+  const srcHdr=document.getElementById('src-col-hdr'); if(srcHdr)srcHdr.textContent='Nguồn ('+sp.viName+')';
+  const srcLbl=document.getElementById('gloss-src-lbl'); if(srcLbl)srcLbl.textContent='Nguồn — '+sp.viName;
+  const srcCol=document.getElementById('gloss-src-col'); if(srcCol)srcCol.textContent=sp.viName;
+  const gs=document.getElementById('gs'); if(gs)gs.placeholder=sourceLang==='vi'?'vd. Long Hồn Cấm Địa Lệnh':'vd. Dragon Soul Forbidden Land Ticket';
+  const badge=document.getElementById('cost-summary-tag'); if(badge&&rows.length)badge.title=pairLabel()+' · '+mp.name;
+}
+function modeInstruction(type){
+  const sp=getSourceProfile(), tp=LANG_PROFILES[currentLang], mode=getModeProfile();
+  let s=`\n\nSOURCE/TARGET CONTRACT: Source language is ${sp.name}. Target language is ${tp.name}. Translation mode: ${mode.name}.`;
+  if(translationMode==='faithful'){
+    s+='\nMODE RULE: Faithful. Preserve meaning closely and safely. Keep wording clear, do not over-invent. Still make grammar natural in the target language.';
+  }else if(translationMode==='fantasy'){
+    s+='\nMODE RULE: Fantasy Transcreation. For item/weapon/place/title names, recreate a compact natural fantasy name in the target language. Preserve game meaning and locked glossary. Do NOT translate word-by-word.';
+  }else{
+    s+='\nMODE RULE: Localization. Recreate the same game meaning naturally in the target language. Preserve tone, function, placeholders, tags, and glossary. Do NOT translate word-by-word.';
+  }
+  if(sourceLang==='vi'){
+    s+='\nVI SOURCE RULE: Vietnamese may already contain Sino-Vietnamese fantasy wording or localized honorifics. Use it as semantic source/style reference, not word order. Avoid literal calques from Hán Việt; make the target sound native for games.';
+  }
+  if(type==='system') s+='\nCOST/QUALITY RULE: System/UI rows should be concise and functional. Do not add flair.';
+  if(type==='weapon') s+='\nCOST/QUALITY RULE: Item/name rows should be short, stable, and glossary-consistent.';
+  if(type==='multi') s+='\nCOST/QUALITY RULE: Preserve each | segment count and order exactly.';
+  return s;
+}
+function getPromptKey(lang,type){return [sourceLang,lang,translationMode,type].join('.');}
+function sourceAdjustedPrompt(base){
+  let out=String(base||'');
+  if(sourceLang==='vi'){
+    out=out.replace(/English/g,'Vietnamese').replace(/EN /g,'VI ');
+  }
+  return out;
+}
+function detectTypeVi(text){
+  const t=String(text||'').trim();
+  if(t.includes('|'))return 'multi';
+  if(/%(?:\d+\$)?[A-Za-z][A-Za-z0-9_]*|\{\d+\}|\{[^}]+\}/.test(t)&&/[.!?,，。！？]/.test(t))return 'system';
+  if(/\b(Lv|EXP|VIP|HP|MP|ID|Top)\b|\+\s*\d+|\d+\s*%/i.test(t)&&t.length<80)return 'system';
+  if(/(xin chào|chào mừng|du khách|ngài|đại nhân|bang chủ|chúc mừng|cảm ơn|xin lỗi|hãy|mau|nhiệm vụ|ta |ngươi|bạn|tôi|chúng ta)/i.test(t))return 'dialogue';
+  const words=t.split(/\s+/).filter(Boolean).length;
+  if(words<=8&&!/[.!?,，。！？]/.test(t)&&/(kiếm|đao|thương|mâu|kích|cung|giáp|khiên|nhẫn|dây chuyền|hỏa|băng|lôi|long|huyết|ma|thánh|thần|linh|nguyệt|độc|trượng|pháp bào)/i.test(t))return 'weapon';
+  return 'dialogue';
+}
+
 /* ══════════════════════════════════════════
    LANG SWITCH — core function
 ══════════════════════════════════════════ */
@@ -1651,30 +1824,34 @@ function setLang(key){
   const gtIn=document.getElementById('gt');
   if(gtIn){gtIn.style.direction=prof.rtl?'rtl':'ltr';gtIn.placeholder='Bản dịch '+prof.viName+'…';}
   // Update status
-  const langGlossCount=Object.keys(prof.glossary).length;
+  const langGlossCount=Object.keys(getActiveMergedGloss()).length;
   document.getElementById('lang-status').textContent=
-    '✓ Đã load: prompt '+prof.name+' · '+langGlossCount+' glossary terms · post-process rules';
+    '✓ Đã load: '+getSourceProfile().name+' → '+prof.name+' · '+getModeProfile().name+' · '+langGlossCount+' active glossary terms · post-process rules';
   // Refresh pipeline preview
   renderPipelinePreview();
   // Refresh UI
   ensureGlossLoaded(key);
   renderGloss();
+  updateSourceModeUI();
   if(rows.length){renderTable();updateCostEstimate();}
   updatePipelineStatus();
 }
 
 function renderPipelinePreview(){
   const prof=LANG_PROFILES[currentLang];
-  document.getElementById('pipe-lang-label').textContent=prof.flag+' '+prof.name;
+  document.getElementById('pipe-lang-label').textContent=getSourceProfile().flag+' '+getSourceProfile().name+' → '+prof.flag+' '+prof.name+' · '+getModeProfile().name;
   // Refresh prompt textarea với type hiện tại (giữ edits của user nếu có)
   switchPromptType(currentPromptType||'weapon');
   // Post-process rules
   document.getElementById('pp-rules-preview').innerHTML=prof.postRules.map(r=>
     `<div class="pp-rule"><span class="pp-icon">→</span><span>${esc(r)}</span></div>`).join('');
   // Lang glossary preview
-  document.getElementById('lang-gloss-preview').innerHTML=Object.entries(prof.glossary).map(([en,tgt])=>
-    `<div class="gls-item"><span class="gls-en">${esc(en)}</span><span class="gls-tgt" style="${prof.rtl?'direction:rtl;':''}">${esc(tgt)}</span></div>`
-  ).join('');
+  const activeGlossEntries=Object.entries(getActiveMergedGloss());
+  document.getElementById('lang-gloss-preview').innerHTML=activeGlossEntries.length
+    ? activeGlossEntries.map(([en,tgt])=>
+        `<div class="gls-item"><span class="gls-en">${esc(en)}</span><span class="gls-tgt" style="${prof.rtl?'direction:rtl;':''}">${esc(tgt)}</span></div>`
+      ).join('')
+    : `<div class="empty" style="grid-column:1/-1;padding:10px;">Chưa có glossary active cho ${pairLabel()}. Glossary EN→Target ban đầu vẫn còn, đổi Source về English để xem.</div>`;
 }
 
 function updatePipelineStatus(){
@@ -1708,10 +1885,13 @@ let customPrompts={};
 let _globalStyleLock=null; // set once at translateAll start, reset on clearFile         // { 'vi.weapon': '...edited...', ... }
 let currentPromptType='weapon'; // tab đang active
 
-function getPrompt(lang,type){
-  const key=lang+'.'+type;
-  if(customPrompts[key]!==undefined) return customPrompts[key];
+function getBasePrompt(lang,type){
   return LANG_PROFILES[lang].prompts[type]||LANG_PROFILES[lang].prompts.dialogue;
+}
+function getPrompt(lang,type){
+  const key=getPromptKey(lang,type);
+  if(customPrompts[key]!==undefined) return customPrompts[key];
+  return sourceAdjustedPrompt(getBasePrompt(lang,type))+modeInstruction(type);
 }
 
 function switchPromptType(type){
@@ -1733,8 +1913,8 @@ function saveCustomPrompt(){
   const ta=document.getElementById('prompt-preview');
   if(!ta)return;
   const val=ta.value;
-  const key=currentLang+'.'+currentPromptType;
-  const def=LANG_PROFILES[currentLang].prompts[currentPromptType]||LANG_PROFILES[currentLang].prompts.dialogue;
+  const key=getPromptKey(currentLang,currentPromptType);
+  const def=sourceAdjustedPrompt(getBasePrompt(currentLang,currentPromptType))+modeInstruction(currentPromptType);
   // Nếu user chỉnh giống default → xóa custom
   if(val.trim()===(def||'').trim()) delete customPrompts[key];
   else customPrompts[key]=val;
@@ -1742,16 +1922,16 @@ function saveCustomPrompt(){
 }
 
 function resetPrompt(){
-  const key=currentLang+'.'+currentPromptType;
+  const key=getPromptKey(currentLang,currentPromptType);
   delete customPrompts[key];
   const ta=document.getElementById('prompt-preview');
-  if(ta) ta.value=LANG_PROFILES[currentLang].prompts[currentPromptType]||LANG_PROFILES[currentLang].prompts.dialogue;
+  if(ta) ta.value=getPrompt(currentLang,currentPromptType);
   updatePromptBadge();
 }
 
 function updatePromptBadge(){
   // Badge trên header: hiện nếu CÓ BẤT KỲ custom prompt nào đang active cho lang hiện tại
-  const hasAny=['weapon','dialogue','system','multi'].some(t=>customPrompts[currentLang+'.'+t]!==undefined);
+  const hasAny=['weapon','dialogue','system','multi'].some(t=>customPrompts[getPromptKey(currentLang,t)]!==undefined);
   const badge=document.getElementById('prompt-custom-badge');
   if(badge) badge.style.display=hasAny?'inline-block':'none';
 }
@@ -1769,7 +1949,8 @@ const normKey=s=>s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu,'').trim();
 
 /* ══ DETECT TYPE ══ */
 function detectType(text){
-  const t=text.trim();
+  if(sourceLang==='vi')return detectTypeVi(text);
+  const t=String(text||'').trim();
   // multi luôn ưu tiên
   if(t.includes('|'))return'multi';
   // Dialogue signals — check TRƯỚC placeholder để tránh mis-classify
@@ -1779,9 +1960,11 @@ function detectType(text){
   if(/\b(thanks|thank|sorry|please|yes|no|ok|okay|yeah|nope|sure|alright|bye|goodbye|cheers|wow|oh|ah|hmm|oops|excuse)\b/i.test(t))return'dialogue';
   // Thuần system: có placeholder VÀ không có flavor NPC
   if(/%(?:\d+\$)?[A-Za-z][A-Za-z0-9_]*|\{\d+\}/.test(t)&&/[.!?,]/.test(t))return'system';
-  // Weapon: ngắn, không dấu câu, không pronoun
+  // Short UI/difficulty/status labels must NOT be forced into weapon mode.
+  if(/^(normal|adventure|difficult|hell|nightmare|infinite nightmare|string|text old|top \d+|tab|menu|shop|store|arena|point|points|%|\d+)$/i.test(t))return'system';
+  // Weapon: only when explicit weapon/equipment terms are present. Do not infer weapon from any short label.
   const words=t.split(/\s+/).filter(Boolean).length;
-  if(words<=5&&!/[.!?,]/.test(t)&&!/\b(I|you|your|he|his|she|her|we|our|they|their|my|me)\b/i.test(t))return'weapon';
+  if(words<=6&&!/[.!?,]/.test(t)&&/\b(sword|blade|spear|lance|lancer|pike|glaive|halberd|polearm|bow|crescent|weapon|weapons|armor|shield|robe|garment|protector)\b/i.test(t)&&!/\b(I|you|your|he|his|she|her|we|our|they|their|my|me)\b/i.test(t))return'weapon';
   return'dialogue';
 }
 
@@ -1794,7 +1977,7 @@ function glossVersion(){
   return h.toString(36);
 }
 function cacheKey(text,type){
-  return normKey(text)+'|'+type+'|'+currentLang+'|'+glossVersion();
+  return normKey(text)+'|'+type+'|'+sourceLang+'>'+currentLang+'|'+translationMode+'|'+glossVersion();
 }
 
 /* ══════════════════════════════════════════
@@ -1838,12 +2021,99 @@ function applyFixes(){
 /* ══════════════════════════════════════════
    GLOSSARY (custom additions)
 ══════════════════════════════════════════ */
+function legacyEnGlossMap(lang){
+  // Legacy glossary format is always English → target. Keep it available even after v8.4 Source→Target split.
+  const prof=LANG_PROFILES[lang]||{};
+  const map={...(prof.glossary||{})};
+  normalizeGlossArray((typeof EMBEDDED_GLOSS_BY_LANG!=='undefined'&&EMBEDDED_GLOSS_BY_LANG[lang])||[],lang)
+    .forEach(g=>{if(g.en&&g.tgt)map[g.en]=g.tgt;});
+  normalizeGlossArray((customGlossByLang&&customGlossByLang[lang])||[],lang)
+    .forEach(g=>{if(g.en&&g.tgt)map[g.en]=g.tgt;});
+  normalizeGlossArray(((typeof customGlossByPair!=='undefined'&&customGlossByPair)&&customGlossByPair['en>'+lang])||[],lang)
+    .forEach(g=>{if(g.en&&g.tgt)map[g.en]=g.tgt;});
+  return map;
+}
+function autoBridgeViSourceGloss(lang=currentLang){
+  // Vietnamese source mode: derive VI → target terms from existing EN→VI + EN→target glossary.
+  // This keeps the original glossary useful instead of making Lang Glossary look empty.
+  if(sourceLang!=='vi'||lang==='vi')return {};
+  const viMap=legacyEnGlossMap('vi');
+  const tgtMap=legacyEnGlossMap(lang);
+  const out={};
+  Object.entries(viMap).forEach(([en,viTerm])=>{
+    const tgt=tgtMap[en];
+    if(!viTerm||!tgt)return;
+    if(normKey(viTerm)===normKey(tgt))return;
+    out[viTerm]=tgt;
+  });
+  return out;
+}
+function embeddedPairGlossMap(lang=currentLang){
+  const k=sourceLang+'>'+lang;
+  const out={};
+  normalizeGlossArray((typeof EMBEDDED_GLOSS_BY_PAIR!=='undefined'&&EMBEDDED_GLOSS_BY_PAIR[k])||[],lang)
+    .forEach(g=>{if(g.en&&g.tgt)out[g.en]=g.tgt;});
+  return out;
+}
 function getActiveMergedGloss(){
-  // Merge: lang embedded + custom additions (custom overrides)
-  const prof=LANG_PROFILES[currentLang];
-  const merged={...prof.glossary};
-  getLangGloss().forEach(g=>{if(g.en&&g.tgt)merged[g.en]=g.tgt;});
+  // Active glossary used by prompt injection, exact local fill, QA, cost estimate, and preview.
+  const prof=LANG_PROFILES[currentLang]||{};
+  const merged={};
+  if(sourceLang==='en'){
+    Object.assign(merged,prof.glossary||{});
+    Object.assign(merged,legacyEnGlossMap(currentLang));
+  }else if(sourceLang==='vi'){
+    Object.assign(merged,autoBridgeViSourceGloss(currentLang));
+    Object.assign(merged,embeddedPairGlossMap(currentLang));
+  }else{
+    Object.assign(merged,embeddedPairGlossMap(currentLang));
+  }
+  const pairTerms=(typeof customGlossByPair!=='undefined'&&customGlossByPair[pairKey()])||[];
+  normalizeGlossArray(pairTerms,currentLang).forEach(g=>{if(g.en&&g.tgt)merged[g.en]=g.tgt;});
+  // Legacy custom glossary panel data remains EN→target. Keep it active only for English-source mode.
+  if(sourceLang==='en')getLangGloss().forEach(g=>{if(g.en&&g.tgt)merged[g.en]=g.tgt;});
   return merged;
+}
+
+/* ══════════════════════════════════════════
+   EXACT GLOSSARY LOCAL FILL — model quality + ultra-low cost
+   Nếu source khớp 100% glossary thì không gọi API: điền thẳng target.
+   Đây là cách rẻ nhất và chính xác nhất cho term/item/title đã khóa.
+══════════════════════════════════════════ */
+function exactGlossTranslationFor(en){
+  const key=normKey(en);
+  if(!key)return null;
+  const merged=getActiveMergedGloss();
+  let best=null;
+  Object.entries(merged).forEach(([src,tgt])=>{
+    if(!src||!tgt)return;
+    if(normKey(src)===key){
+      if(!best || String(src).length>String(best.en).length)best={en:src,tgt:String(tgt)};
+    }
+  });
+  return best?best.tgt:null;
+}
+function applyExactGlossaryLocal(usePP=true){
+  let n=0;
+  const prof=LANG_PROFILES[currentLang];
+  rows.forEach(r=>{
+    if(r.status!=='pending' && r.status!=='stale')return;
+    const type=r._type||detectType(r.en);r._type=type;
+    const tgt=exactGlossTranslationFor(r.en);
+    if(!tgt)return;
+    let out=sanitizeLLMOutput(repairLockedTokensLocal(r.en,tgt),currentLang,type,r.en);
+    let pp=out;
+    if(usePP){
+      const res=applyPostProcess(out,currentLang,type,r.en);
+      pp=sanitizeLLMOutput(repairLockedTokensLocal(r.en,res.out),currentLang,type,r.en);
+      if(res.changed||pp!==out)ppCount++;
+    }
+    r.tgt=out;r.pp=pp;r.status='cached';r.mode='glossary-local';r._forceApi=false;
+    cache.set(cacheKey(r.en,type),{tgt:out,pp});
+    tmStore(r.en,out,pp,currentLang,type);
+    n++;
+  });
+  return n;
 }
 function renderGloss(){
   ensureGlossLoaded(currentLang);
@@ -1853,12 +2123,16 @@ function renderGloss(){
   const isEmbedded=embLang.length>0&&
     gloss.length===embLang.length&&
     gloss.every((g,i)=>g.en===embLang[i]?.en&&g.tgt===embLang[i]?.tgt);
-  document.getElementById('gcnt').textContent=gloss.length+' thuật ngữ — '+prof.viName;
+  document.getElementById('gcnt').textContent=gloss.length+' thuật ngữ — '+getSourceProfile().viName+' → '+prof.viName;
   const embedBadge=document.getElementById('embed-badge');
   if(embedBadge)embedBadge.style.display=embLang.length>0?'inline-flex':'none';
   const b=document.getElementById('gbody');
   if(!gloss.length){
-    b.innerHTML='<tr><td colspan="4"><div class="empty">Chưa có thuật ngữ '+prof.viName+' — thêm ở trên hoặc nhập JSON</div></td></tr>';
+    const activeCount=Object.keys(getActiveMergedGloss()).length;
+    const extra=sourceLang==='vi'&&activeCount
+      ? ' Lang Glossary phía trên vẫn đang dùng '+activeCount+' thuật ngữ auto-bridge từ glossary EN→VI + EN→'+prof.viName+'.'
+      : (sourceLang!=='en'?' Glossary EN→Target ban đầu không mất; đổi Source về English để xem/sửa bucket cũ.':'');
+    b.innerHTML='<tr><td colspan="4"><div class="empty">Chưa có thuật ngữ tùy chỉnh riêng cho '+getSourceProfile().viName+' → '+prof.viName+'.'+extra+' Thêm ở trên hoặc nhập JSON nếu cần khóa term riêng.</div></td></tr>';
     return;
   }
   b.innerHTML=gloss.map((g,i)=>`<tr>
@@ -1928,7 +2202,7 @@ function invalidateByGloss(terms){
       r._forceApi=true; // bắt buộc gọi API lại, không ăn cache/TM
       // Xóa mọi cache entry liên quan dòng này trong ngôn ngữ hiện tại.
       for(const ck of Array.from(cache.keys())){
-        if(ck.startsWith(normKey(r.en)+'|')&&ck.includes('|'+currentLang+'|')) cache.delete(ck);
+        if(ck.startsWith(normKey(r.en)+'|')&&ck.includes('|'+sourceLang+'>'+currentLang+'|')) cache.delete(ck);
       }
       affected.push(i);
     }
@@ -1979,7 +2253,7 @@ function retranslateGlossMatches(){
     renderTable();
     showGlossNotice('glossary hiện tại',count,'khớp');
   }else{
-    alert('Không tìm thấy dòng đã dịch nào khớp glossary hiện tại. Kiểm tra lại cụm English có xuất hiện y nguyên trong cột English không.');
+    alert('Không tìm thấy dòng đã dịch nào khớp glossary hiện tại. Kiểm tra lại cụm nguồn có xuất hiện y nguyên trong cột nguồn không.');
   }
 }
 
@@ -2308,6 +2582,83 @@ function khmerPronounNormalize(text, enOrig){
   return text;
 }
 
+
+/* ══════════════════════════════════════════
+   ROBUST LINE GUARD (v8.3.7)
+   Fixes model mistakes from cheap line protocol without extra API calls:
+   - strips accidental literal "id" / header words
+   - flags untranslated output for target-script languages
+   - applies source-specific Arabic phrase locks for known glossary terms
+══════════════════════════════════════════ */
+function stripLineProtocolArtifacts(text,enOrig,langKey){
+  // v8.5.7 Prompt-Driven Safe Cleaner:
+  // Only remove transport/protocol wrappers (row id, headers, literal TAB markers).
+  // Never remove real target-language letters or words. The prompt owns the translation style.
+  let t=String(text||'').trim();
+  const src=String(enOrig||'').trim();
+  const cleanOnce=()=>{
+    t=t.replace(/^\s*(?:```(?:text|tsv|json)?\s*)/i,'').replace(/\s*```\s*$/,'').trim();
+    t=t.replace(/^\s*(?:(?:<TAB>|\[TAB\]|TAB|\t|	)\s*)+/ig,'').trim();
+    t=t.replace(/^\s*\[?\d+\]?\s*(?:	|\t|<TAB>|TAB|\|\|\||\||[:：\.\)\-–—])\s*/i,'').trim();
+    t=t.replace(/^\s*(?:id|row[_\s-]*number|number|source|src|target|tgt|translation|translated\s*text|output|text|type)\s*(?:	|\t|<TAB>|TAB|\|\|\||\||[:：\.\)\-–—])\s*/i,'').trim();
+    t=t.replace(/^\s*(?:w|d|s|m|weapon|dialogue|system|multi)\s*(?:	|\t|<TAB>|TAB|\|\|\||\||[:：\.\)\-–—])\s*/i,'').trim();
+    if(langKey==='ar'){
+      t=t.replace(/^\s*(?:ترجمة|الترجمة|نص|النص|إخراج|الناتج|ت|د|س|م|و)\s*(?:	|\t|<TAB>|TAB|\|\|\||\||[:：\.\)\-–—])\s*/iu,'').trim();
+    }
+  };
+  for(let i=0;i<3;i++){const before=t; cleanOnce(); if(before===t)break;}
+  if(!/^id/i.test(src) && /^id\s+/i.test(t)) t=t.replace(/^id\s+/i,'').trim();
+  return t.trim();
+}
+function hasLineProtocolArtifact(text,enOrig,langKey){
+  const t=String(text||'').trim();
+  if(!t)return false;
+  if(/^\s*(?:<TAB>|\[TAB\]|TAB|\t|	)/i.test(t))return true;
+  if(/^\s*\[?\d+\]?\s*(?:	|\t|<TAB>|TAB|\|\|\||\||[:：\.\)\-–—])\s*/i.test(t))return true;
+  if(/^\s*(?:id|row[_\s-]*number|number|source|src|target|tgt|translation|translated\s*text|output|text|type)\s*(?:	|\t|<TAB>|TAB|\|\|\||\||[:：\.\)\-–—])/i.test(t))return true;
+  if(/^\s*(?:w|d|s|m|weapon|dialogue|system|multi)\s*(?:	|\t|<TAB>|TAB|\|\|\||\||[:：\.\)\-–—])/i.test(t))return true;
+  if(langKey==='ar' && /^\s*(?:ترجمة|الترجمة|نص|النص|إخراج|الناتج|ت|د|س|م|و)\s*(?:	|\t|<TAB>|TAB|\|\|\||\||[:：\.\)\-–—])/iu.test(t))return true;
+  if(/^id\s+/i.test(t))return true;
+  return false;
+}
+function targetLangIssue(text,langKey,enOrig,type){
+  const src=String(enOrig||'');
+  let t=removeLockedTokens(String(text||''));
+  // Remove allowed game acronyms/codes that often stay Latin intentionally.
+  t=t.replace(/\b(?:VIP|EXP|HP|MP|SP|PK|NPC|AFK|BOSS|UI|GM|Lv\.?Max|Lv\.?\d+|[ABCS]-?grade)\b/gi,' ');
+  t=t.replace(/[0-9%+\-–—_.:,;!?'"()\[\]{}<>\/\\|\s]+/g,' ').trim();
+  if(!t)return '';
+  if(langKey==='ar'){
+    if(!/[\u0600-\u06FF]/.test(t) && /[A-Za-z]{3,}/.test(t))return '⚠lang';
+  }
+  if(langKey==='ko'){
+    if(!/[\uAC00-\uD7AF]/.test(t) && /[A-Za-z]{3,}/.test(t))return '⚠lang';
+  }
+  if(langKey==='km'){
+    if(!/[\u1780-\u17FF]/.test(t) && /[A-Za-z]{3,}/.test(t))return '⚠lang';
+  }
+  return '';
+}
+
+function applyArabicSourceSpecificFixes(text,enOrig){
+  let t=String(text||'');
+  const src=String(enOrig||'').toLowerCase();
+  const has=(x)=>src.includes(String(x).toLowerCase());
+  if(has('glaive')) t=t.replace(/غليف/g,'حربة');
+  if(has('hun defense lancer')) t=t.replace(/رامح\s+الدفاع\s+الهوني/g,'رامح الهون الدفاعي');
+  if(has('hun assault lancer')) t=t.replace(/رامح\s+الهجوم\s+الهوني/g,'رامح الهون الهجومي');
+  if(has('stone golem')) t=t.replace(/غول\s+الحجر/g,'غول حجري').replace(/جلمود\s+الحجر/g,'غول حجري');
+  if(has('rock golem')) t=t.replace(/جلمود\s+الصخر|جلمود\s+الصخور/g,'غول الصخور');
+  if(has('firm')){
+    t=t.replace(/مهمة\s+الشركة\s+اليومية/g,'مهمة الفصيل اليومية');
+    t=t.replace(/مهام\s+يومية\s+للشركة/g,'مهام يومية للفصيل');
+    t=t.replace(/الشركة/g,'الفصيل').replace(/شركة/g,'فصيل');
+  }
+  if(has('master of martial arts')) t=t.replace(/سيدي\s+فنون\s+القتال/g,'خبير فنون القتال');
+  if(has('master elixir')) t=t.replace(/سيدي\s+إكسير\s+الماستر|إكسير\s+الماستر/g,'إكسير الإتقان');
+  return t;
+}
+
 const INTERNAL_TYPE_LABEL_WORDS='WEAPON|DIALOGUE|SYSTEM|MULTI|WPN|DIA|SYS|MIX|WEA|سلاح|أسلحة|حوار|نظام|متعدد|واجهة|رسالة';
 function hasInternalTypeLabel(text){
   const re=new RegExp('^\\s*(?:\\[\\s*(?:'+INTERNAL_TYPE_LABEL_WORDS+')\\s*\\]\\s*|(?:'+INTERNAL_TYPE_LABEL_WORDS+')\\s*[:：\\-–—]\\s*)','i');
@@ -2326,52 +2677,59 @@ function stripInternalTypeLabels(text,enOrig){
 function sourceHasFirstPerson(enOrig){
   return /\b(i|i'm|i’m|i`m|i’ll|i\u2019ll|i will|i have|i've|me|my|mine|we|us|our|ours)\b/i.test(String(enOrig||''));
 }
+
+function sourceContainsWord(enOrig, words){
+  const src=String(enOrig||'').toLowerCase();
+  return words.some(w=>new RegExp('\\b'+String(w).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'s?\\b','i').test(src));
+}
+function stripArabicAddedCategoryWords(text,enOrig){
+  let t=String(text||'').trim();
+  const src=String(enOrig||'');
+  if(!src)return t;
+  const exact=exactGlossTranslationFor(src);
+  if(exact) return exact;
+  const hasWeapon=sourceContainsWord(src,['weapon','weapons']);
+  const hasEquipment=sourceContainsWord(src,['equipment','equipments','gear']);
+  const hasItem=sourceContainsWord(src,['item','items']);
+  const stripLead=(words)=>{
+    const w=words.join('|');
+    const tag='(?:<[^>]+>|\\[[^\\]\\r\\n]{0,180}\\])';
+    const re=new RegExp('^(\\s*(?:'+tag+'\\s*)*)\\s*(?:'+w+')\\s+','u');
+    let prev;
+    do{ prev=t; t=t.replace(re,'$1'); }while(t!==prev);
+  };
+  if(!hasWeapon)stripLead(['سلاح','السلاح','أسلحة','الأسلحة']);
+  if(!hasEquipment)stripLead(['معدات','المعدات','عتاد','العتاد']);
+  if(!hasItem)stripLead(['عنصر','العنصر','عناصر','العناصر']);
+  return t.trim();
+}
+function hasArabicAddedCategoryWords(text,enOrig){
+  if(String(text||'').trim()===stripArabicAddedCategoryWords(text,enOrig))return false;
+  return true;
+}
 function sanitizeLLMOutput(text,langKey,rowType,enOrig){
-  let t=stripInternalTypeLabels(text,enOrig);
-  if(langKey==='ar' && !sourceHasFirstPerson(enOrig)){
-    // Arabic model sometimes prepends "أنا" to achievement/title/UI fragments.
-    // Strip only leading standalone pronoun when the English source has no first-person meaning.
-    t=t.replace(/^\s*(?:أنا|انا)\s+(?=\S)/,'');
-  }
+  // v8.5.7: prompt-driven mode. Sanitizer must not rewrite meaning, pronouns, categories, or target words.
+  // It only strips transport/protocol wrappers around model output.
+  let t=stripLineProtocolArtifacts(text,enOrig,langKey);
   t=stripInternalTypeLabels(t,enOrig);
+  t=stripLineProtocolArtifacts(t,enOrig,langKey);
   return t.trim();
 }
 function applyPostProcess(text,langKey,type,enOrig){
-  // 1. Glossary hard enforcement (weapon) / soft enforcement (dialogue)
+  // v8.5.7 Prompt-Driven Post-Process:
+  // Do not force style/meaning after the API. The prompt decides tone, cổ trang, localization level.
+  // Keep only safe glossary enforcement and VI weapon cleanup when PP is enabled.
+  const before=text;
   if(type==='weapon'){
     text=enforceGlossary(text,[enOrig||''],type);
+    if(langKey==='vi'){
+      const prof=LANG_PROFILES[langKey];
+      if(prof&&prof.postProcess) text=prof.postProcess(text);
+    }
   } else if(type==='dialogue'||type==='multi'){
     text=enforceGlossaryDialogue(text,enOrig||'');
   }
-
-  // 2. Normalize pronouns per language
-  // VI: tắt — LLM tự handle pronoun theo PRONOUN RULE trong system prompt
-  // AR/KO: vẫn giữ để xử lý edge cases colloquial
-  if(type==='dialogue'||type==='multi'){
-    if(langKey==='ar'){
-      text=arabicPronounNormalize(text,enOrig||'');
-      return{out:text,changed:true};
-    }
-    if(langKey==='ko'){
-      text=koreanPronounNormalize(text,enOrig||'');
-      return{out:text,changed:true};
-    }
-    if(langKey==='tr'){
-      text=turkishPronounNormalize(text,enOrig||'');
-      return{out:text,changed:true};
-    }
-    if(langKey==='km'){
-      text=khmerPronounNormalize(text,enOrig||'');
-      return{out:text,changed:true};
-    }
-  }
-
-  // 3. Weapon-specific post-process rules (Hán Việt, weapon lock)
-  if(type&&type!=='weapon')return{out:text,changed:false};
-  const prof=LANG_PROFILES[langKey];
-  if(!prof||!prof.postProcess)return{out:text,changed:false};
-  const out=prof.postProcess(text);
-  return{out,changed:out!==text};
+  return{out:text,changed:text!==before};
 }
 function runQA(text,langKey,enOrig,type){
   const prof=LANG_PROFILES[langKey];
@@ -2388,6 +2746,9 @@ function runQA(text,langKey,enOrig,type){
   if(type==='weapon'&&text.split(/\s+/).length>7)flags.push('📏');
   if(type==='dialogue'&&enOrig&&enOrig.length>40&&text.length<enOrig.length*0.2)flags.push('⚠short');
   if(hasInternalTypeLabel(text))flags.push('⚠type');
+  if(hasLineProtocolArtifact(text,enOrig,langKey))flags.push('⚠id');
+  const langIssue=targetLangIssue(text,langKey,enOrig,type); if(langIssue)flags.push(langIssue);
+  if(langKey==='ar'&&hasArabicAddedCategoryWords(text,enOrig))flags.push('⚠extra');
   // Pronoun check: VI dialogue không được dùng "bạn" hoặc "tôi"
   if(langKey==='vi'&&(type==='dialogue'||type==='multi')){
     // Chỉ flag nếu style là formal/normal (không phải casual tôi/bạn)
@@ -2408,6 +2769,104 @@ function runQA(text,langKey,enOrig,type){
   return flags;
 }
 
+
+
+/* ══════════════════════════════════════════
+   v8.5.7 HARD QA GATE — local, 0 token cost
+   Purpose: API success is not enough. A row is valid only if it has text and keeps locked game tokens.
+══════════════════════════════════════════ */
+function pipeCount(s){return (String(s||'').match(/\|/g)||[]).length;}
+function tokenSeqMismatch(src,out){
+  const a=extractLockedTokens(src), b=extractLockedTokens(out);
+  if(!a.length)return false;
+  if(a.length!==b.length)return true;
+  return !a.every((t,i)=>t===b[i]);
+}
+function hasBlockingLineArtifact(out,src){
+  return hasInternalTypeLabel(out)||hasLineProtocolArtifact(out,src,currentLang);
+}
+function hardQaFlagsForText(src,out,langKey,type){
+  const flags=[];
+  const s=String(src||'');
+  const t=String(out||'').trim();
+  if(s.trim()&&!t)flags.push('empty_target');
+  if(tokenSeqMismatch(s,t))flags.push('token_mismatch');
+  if(pipeCount(s)!==pipeCount(t))flags.push('pipe_mismatch');
+  const qi=qaTokenIntegrity(s,t);
+  if(!qi.ok)flags.push('tag_count_mismatch');
+  const tc=detectTagCorruption(s,t);
+  if(!tc.ok)flags.push('tag_structure_mismatch');
+  if(hasBlockingLineArtifact(t,s))flags.push('protocol_artifact');
+  const langIssue=targetLangIssue(t,langKey,s,type);
+  if(langIssue==='⚠lang')flags.push('target_language_mismatch');
+  return [...new Set(flags)];
+}
+function hardQaFlagsForRow(r){
+  const type=r._type||detectType(r.en);
+  const out=String(r.pp||r.tgt||'');
+  return hardQaFlagsForText(r.en,out,currentLang,type);
+}
+function findHardQaFailedRows(list=rows){
+  return list.filter(r=>{
+    if(!r||!String(r.en||'').trim())return false;
+    if(r.status==='error')return true;
+    if(!(r.status==='done'||r.status==='cached'||r.status==='tm'||r.status==='pending'))return false;
+    return hardQaFlagsForRow(r).length>0;
+  });
+}
+function clearRowForQaRetry(r,round){
+  const type=r._type||detectType(r.en); r._type=type;
+  try{cache.delete(cacheKey(r.en,type));}catch(_){ }
+  r.tgt=''; r.pp=''; r.status='pending'; r.mode='qa-retry-'+round; r._forceApi=true; r._qaRetryRound=round;
+}
+function setRowError(r,reason){
+  r.status='error'; r._qaError=reason||hardQaFlagsForRow(r).join(',')||'qa_failed';
+  if(!String(r.tgt||r.pp||'').trim()){
+    r.tgt='__ERROR_EMPTY_TRANSLATION__';
+    r.pp='__ERROR_EMPTY_TRANSLATION__';
+  }
+  const ri=rows.indexOf(r); const sCell=ri>=0?document.getElementById('s-'+ri):null;
+  if(sCell)sCell.innerHTML=sIcon('error');
+}
+async function runPostBatchQaGate(baseCtx,maxRounds=2){
+  let fixed=0, attempted=0;
+  for(let round=1;round<=maxRounds;round++){
+    const failed=findHardQaFailedRows(rows).filter(r=>r.status!=='error');
+    if(!failed.length)break;
+    attempted+=failed.length;
+    qaRetryCount+=failed.length;
+    baseCtx.st.innerHTML=`<span class="blink">QA Gate vòng ${round}/${maxRounds}: retry riêng ${failed.length.toLocaleString('vi')} dòng lỗi kỹ thuật (ô rỗng/tag/placeholder/|/ngôn ngữ)…</span>`;
+    await yieldUI();
+    failed.forEach(r=>clearRowForQaRetry(r,round));
+    const qBatches=mkBatches(failed);
+    let qDone=0;
+    for(let i=0;i<qBatches.length;i++){
+      if(abortFlag)break;
+      const ctx={...baseCtx,batchNo:i+1,totalBatches:qBatches.length,workers:1,workerId:1};
+      qDone+=await translatePatchAdaptive(qBatches[i],ctx,0,'QA'+round+'.'+(i+1));
+      if((i%3)===0){updateSum();updateStats();await yieldUI();}
+      await sleep(80);
+    }
+    fixed+=qDone;
+    renderTable();updateStats();await yieldUI();
+  }
+  const remaining=findHardQaFailedRows(rows);
+  remaining.forEach(r=>setRowError(r,hardQaFlagsForRow(r).join(',')));
+  qaAutoFixedCount+=fixed;
+  qaFinalBlockCount=remaining.length;
+  return {attempted,fixed,remaining:remaining.length};
+}
+function buildExportQaRows(){
+  const out=[];
+  rows.forEach((r,i)=>{
+    const hard=rowIsPendingForUi(r)?['pending_not_translated']:hardQaFlagsForRow(r);
+    const soft=(r.pp?runQA(r.pp,currentLang,r.en,r._type||detectType(r.en)):[]).filter(Boolean);
+    if(hard.length||soft.length||r.status==='error'||rowIsPendingForUi(r)){
+      out.push({row:i+2,status:r.status||'',hard:hard.join('; '),soft:soft.join(' '),source:r.en,raw:r.tgt||'',target:r.pp||r.tgt||'',note:r._qaError||''});
+    }
+  });
+  return out;
+}
 /* ══════════════════════════════════════════
    FUZZY TRANSLATION MEMORY
    Tách biệt với cache — cache là exact-match session
@@ -2443,24 +2902,162 @@ function tmSimilarity(a, b) {
   return 1 - levenshtein(a, b) / maxLen;
 }
 
+function tmMemKey(en, lang, type){return [sourceLang,lang,translationMode,type,normKey(en)].join('|');}
 function tmStore(en, tgt, pp, lang, type) {
-  TM.set(normKey(en), {tgt, pp, lang, type});
+  TM.set(tmMemKey(en,lang,type), {tgt, pp, lang, type, sourceLang, translationMode, textKey:normKey(en)});
 }
 
 function tmLookup(en, lang, type) {
   const k = normKey(en);
-  const exact = TM.get(k);
-  if (exact && exact.lang === lang && exact.type === type)
+  const exact = TM.get(tmMemKey(en,lang,type));
+  if (exact && exact.lang === lang && exact.type === type && exact.sourceLang===sourceLang && exact.translationMode===translationMode)
     return {...exact, match: 1.0};
   let best = null, bestScore = TM_THRESHOLD - 0.001;
   for (const [key, val] of TM) {
-    if (val.lang !== lang || val.type !== type) continue;
-    const lenRatio = Math.abs(key.length - k.length) / Math.max(key.length, k.length, 1);
+    if (val.lang !== lang || val.type !== type || val.sourceLang!==sourceLang || val.translationMode!==translationMode) continue;
+    const cmpKey=val.textKey||String(key).split('|').pop();
+    const lenRatio = Math.abs(cmpKey.length - k.length) / Math.max(cmpKey.length, k.length, 1);
     if (lenRatio > 0.35) continue;
-    const score = tmSimilarity(k, key);
+    const score = tmSimilarity(k, cmpKey);
     if (score > bestScore) { bestScore = score; best = {...val, match: score}; }
   }
   return best;
+}
+
+
+/* ══════════════════════════════════════════
+   SMART TEMPLATE DEDUP — local, no API cost
+   Mức 1 an toàn: chỉ gom các dòng khác số/%/Lv/+n.
+   API dịch template một lần, local restore value về từng dòng.
+══════════════════════════════════════════ */
+function smartDedupEnabled(){
+  const el=document.getElementById('use-smart-dedup');
+  return !el || el.checked;
+}
+function protectForTemplate(s){
+  const locks=[];
+  const text=String(s||'').replace(TOKEN_REGEX,m=>{
+    const key=`__LOCK${locks.length}__`;
+    locks.push({key,value:m});
+    return key;
+  });
+  return {text,locks};
+}
+function restoreTemplateLocks(s,locks){
+  let out=String(s||'');
+  (locks||[]).forEach(x=>{out=out.split(x.key).join(x.value);});
+  return out;
+}
+function makeSmartTemplate(en,type){
+  const src=String(en||'').trim();
+  if(!src || src.includes('|'))return null; // multi-segment needs exact pipe safety
+  // Avoid over-generalizing very short pure numbers/symbols.
+  if(src.length<5 || /^[\d\s%+.,-]+$/.test(src))return null;
+  const {text:locked,locks}=protectForTemplate(src);
+  let vals=[], n=0;
+  const put=(kind,val)=>{const key=`{${kind}${++n}}`; vals.push({key,kind,value:val}); return key;};
+  let t=locked;
+  // Order matters: special forms before generic numbers.
+  t=t.replace(/\bLv\.?\s*(?:Max|MAX|max|\d+)\b/g,m=>put('LV',m));
+  t=t.replace(/\+\s*\d+\b/g,m=>put('PLUS',m.replace(/\s+/g,'')));
+  t=t.replace(/\b\d+(?:[.,]\d+)?\s*%/g,m=>put('PCT',m.replace(/\s+/g,'')));
+  t=t.replace(/\b\d{1,12}(?:[.,]\d+)?\b/g,m=>put('NUM',m));
+  t=restoreTemplateLocks(t,locks).replace(/\s+/g,' ').trim();
+  if(!vals.length || t===src)return null;
+  // Require some stable letters so we don't group generic junk.
+  const alpha=(t.replace(/\{(?:NUM|PCT|PLUS|LV)\d+\}/g,'').match(/\p{L}/gu)||[]).length;
+  if(alpha<6)return null;
+  return {template:t,values:vals,kindSig:vals.map(v=>v.kind).join(',')};
+}
+function restoreSmartTemplateOutput(out,values){
+  let r=String(out||'');
+  (values||[]).forEach(v=>{
+    // Replace exact token; tolerate spaces inserted inside braces by model.
+    const esc=v.key.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    r=r.replace(new RegExp(esc,'g'),v.value);
+    const loose=v.key.replace('{','\\{\\s*').replace('}','\\s*\\}').replace(/(NUM|PCT|PLUS|LV)/,'$1\\s*');
+    try{r=r.replace(new RegExp(loose,'g'),v.value);}catch(_){ }
+  });
+  return r;
+}
+function buildSmartDedupUnits(inputRows){
+  const useSmart=smartDedupEnabled();
+  const exactMap=new Map();
+  inputRows.forEach(r=>{
+    const type=r._type||detectType(r.en); r._type=type;
+    const k=sourceLang+'>'+currentLang+'|'+translationMode+'|'+type+'|'+normKey(r.en);
+    if(!exactMap.has(k))exactMap.set(k,{rep:r,members:[]});
+    exactMap.get(k).members.push(r);
+  });
+  const exactGroups=[...exactMap.values()];
+  const templateMap=new Map(), units=[];
+  let exactSaved=0, templateSaved=0;
+  exactGroups.forEach(g=>{
+    exactSaved += Math.max(0,g.members.length-1);
+    const rep=g.rep, type=rep._type||detectType(rep.en);
+    const info=useSmart?makeSmartTemplate(rep.en,type):null;
+    if(!info){
+      units.push({...rep,__unit:'exact',__members:g.members});
+      return;
+    }
+    const k=sourceLang+'>'+currentLang+'|'+translationMode+'|'+type+'|'+info.kindSig+'|'+normKey(info.template);
+    if(!templateMap.has(k))templateMap.set(k,{template:info.template,type,items:[]});
+    templateMap.get(k).items.push({rep,members:g.members,values:info.values});
+  });
+  templateMap.forEach(grp=>{
+    if(grp.items.length<2){
+      const it=grp.items[0];
+      units.push({...it.rep,__unit:'exact',__members:it.members});
+      return;
+    }
+    templateSaved += grp.items.reduce((s,it)=>s+it.members.length,0)-1;
+    units.push({en:grp.template,_type:grp.type,status:'pending',__unit:'template',__template:true,__items:grp.items});
+  });
+  return {units,exactSaved,templateSaved,totalSaved:exactSaved+templateSaved,exactUnique:exactGroups.length,apiUnique:units.length};
+}
+function applyUnitTranslation(unit,llmOut,ppOut,usePP,prof){
+  if(!unit.__template){
+    const members=unit.__members&&unit.__members.length?unit.__members:[unit];
+    members.forEach((m,mi)=>{
+      const rowType=m._type||unit._type||detectType(m.en);
+      let out=llmOut, pp=ppOut;
+      if(mi>0){ savedTok+=tok(m.en)+tok(out); totalTok+=tok(m.en)+tok(out); }
+      const ri=rows.indexOf(m);
+      if(ri<0)return;
+      rows[ri].tgt=out; rows[ri].pp=pp; rows[ri].status=mi===0?'done':'cached'; rows[ri].mode=mi===0?rowType:'smart-exact'; rows[ri]._type=rowType;
+      cache.set(cacheKey(m.en,rowType),{tgt:out,pp}); tmStore(m.en,out,pp,currentLang,rowType);
+      const rawCell=document.getElementById('raw-'+ri), ppCell=document.getElementById('pp-'+ri), sCell=document.getElementById('s-'+ri);
+      if(rawCell){rawCell.className='tgt-c';rawCell.style.direction=prof.rtl?'rtl':'ltr';rawCell.style.fontFamily='var(--sans)';rawCell.textContent=out;}
+      if(ppCell){const changed=pp!==out;ppCell.className=changed?'pp-c':'tgt-c';ppCell.style.direction=prof.rtl?'rtl':'ltr';ppCell.style.fontFamily='var(--sans)';ppCell.textContent=pp;}
+      if(sCell)sCell.innerHTML=sIcon('done');
+    });
+    return members.length;
+  }
+  let applied=0;
+  unit.__items.forEach((it,idx)=>{
+    it.members.forEach(m=>{
+      const rowType=m._type||unit._type||detectType(m.en);
+      let out=restoreSmartTemplateOutput(llmOut,it.values);
+      out=sanitizeLLMOutput(repairLockedTokensLocal(m.en,out),currentLang,rowType,m.en);
+      let pp=out;
+      if(usePP){
+        const res=applyPostProcess(out,currentLang,rowType,m.en);
+        pp=sanitizeLLMOutput(repairLockedTokensLocal(m.en,res.out),currentLang,rowType,m.en);
+        if(res.changed||pp!==out)ppCount++;
+      }
+      if(idx>0 || m!==it.rep){ savedTok+=tok(m.en)+tok(out); totalTok+=tok(m.en)+tok(out); }
+      const ri=rows.indexOf(m);
+      if(ri<0)return;
+      rows[ri].tgt=out; rows[ri].pp=pp; rows[ri].status=idx===0&&m===it.rep?'done':'cached'; rows[ri].mode=idx===0&&m===it.rep?rowType:'smart-template'; rows[ri]._type=rowType;
+      cache.set(cacheKey(m.en,rowType),{tgt:out,pp}); tmStore(m.en,out,pp,currentLang,rowType);
+      const rawCell=document.getElementById('raw-'+ri), ppCell=document.getElementById('pp-'+ri), sCell=document.getElementById('s-'+ri);
+      if(rawCell){rawCell.className='tgt-c';rawCell.style.direction=prof.rtl?'rtl':'ltr';rawCell.style.fontFamily='var(--sans)';rawCell.textContent=out;}
+      if(ppCell){const changed=pp!==out;ppCell.className=changed?'pp-c':'tgt-c';ppCell.style.direction=prof.rtl?'rtl':'ltr';ppCell.style.fontFamily='var(--sans)';ppCell.textContent=pp;}
+      if(sCell)sCell.innerHTML=sIcon('done');
+      applied++;
+    });
+  });
+  return applied;
 }
 
 /* ══════════════════════════════════════════
@@ -2557,7 +3154,7 @@ function stripPromptContractForMixed(prompt){
 }
 function mkMixedPromptIntro(types){
   const used=[...new Set(types)].filter(Boolean);
-  let sys='You are translating a large game localization Excel in original row order. This API call may contain mixed row types. Each mixed input item is a compact array [i,t,x]. t is metadata only: w=weapon, d=dialogue, s=system, m=multi. Translate only x according to t. Return ONLY a JSON array of translated strings in the same order. Do NOT include ids, row numbers, type labels, translated type labels, explanations, or markdown.';
+  let sys='You are localizing a large game localization Excel in original row order. Source language: '+getSourceProfile().name+'. Target language: '+LANG_PROFILES[currentLang].name+'. Mode: '+getModeProfile().name+'. This API call may contain mixed row types. t is metadata only: w=item/name, d=dialogue, s=system, m=multi. Translate only the source text. Never add inferred category words or missing context. Return only translations, no labels, no explanations, no markdown.';
   sys+='\n\nTYPE ROUTING RULES:';
   sys+='\n- w: weapon/item name; compact fantasy naming.';
   sys+='\n- d: NPC/story/dialogue; preserve meaning, tone and pronouns.';
@@ -2639,7 +3236,7 @@ function mkPrompt(lines,type,types){
   }
 
   if((type!=='system'||types.some(t=>t!=='system'))&&ag.length>0){
-    sys+='\n\nGLOSSARY (MUST enforce exactly for non-system rows; for system rows, keep natural UI wording and preserve placeholders):';
+    sys+='\n\nGLOSSARY HARD CONTRACT: Use these terms EXACTLY. If a source line exactly equals a glossary key, output exactly the glossary target and nothing else. If a source line contains a glossary key, preserve the target phrase exactly while keeping the sentence natural. Do not paraphrase glossary targets.';
     ag.forEach(g=>{sys+='\n'+g.en+' → '+g.tgt;});
   }
   if(lines.some(l=>/%(?:\d+\$)?[A-Za-z][A-Za-z0-9_]*|\{[^}]+\}/.test(l))){
@@ -2647,7 +3244,7 @@ function mkPrompt(lines,type,types){
   }
   // Token protection rule — short contract for lower input cost; local QA/repair handles strictness after LLM.
   if(lines.some(l=>/⟨T\d+⟩/.test(l))){
-    sys+='\n\nTOKEN RULE: Protected tokens ⟨T0⟩, ⟨T1⟩... are locked game/code/tag/placeholders. For each row, copy every protected token exactly once in the same order. Translate only human-readable text. Never add, drop, translate, split, or reorder protected tokens. Return JSON array only.';
+    sys+='\n\nTOKEN RULE: Protected tokens ⟨T0⟩, ⟨T1⟩... are locked game/code/tag/placeholders. For each row, copy every protected token exactly once in the same order. Translate only human-readable text. Never add, drop, translate, split, or reorder protected tokens. Return line-protocol output only.';
   }
   const TYPE_CODE={weapon:'w',dialogue:'d',system:'s',multi:'m'};
 
@@ -2657,8 +3254,10 @@ function mkPrompt(lines,type,types){
   sys=sys.replace(/Return ONLY a JSON object[^\n]*(?:\n|$)/gi,'');
   sys=sys.replace(/Return ONLY a JSON array[^\n]*(?:\n|$)/gi,'');
   sys=sys.replace(/Return JSON array only\.?/gi,'');
-  sys+='\n\nOUTPUT FORMAT (STRICT, COST MODE): Return EXACTLY '+lines.length+' lines. Each line must be: id<TAB>translation. Keep the same numeric id and order. Do NOT output JSON. Do NOT output markdown. Do NOT include type codes (w/d/s/m) or labels like [WEAPON]. Translate only the text.';
-  const user='INPUT LINES: id<TAB>type<TAB>text\n'+lines.map((l,i)=>`${i+1}\t${TYPE_CODE[types[i]]||'d'}\t${l}`).join('\n');
+  sys+='\n\nPROMPT-DRIVEN LOCALIZATION CONTRACT: Follow the editable prompt above as the source of truth for meaning, target language, tone, style, and localization level. The tool only supplies source lines, glossary, protected tokens, and output format. Do not add explanations, comments, labels, or metadata outside the translation itself. If a glossary exact match is supplied for a full source line, output that glossary target exactly.';
+  sys+='\n\nTARGET CONFIRMATION: Source language = '+getSourceProfile().name+'. Target language = '+prof.name+' ('+prof.viName+'). Translation mode = '+getModeProfile().name+'. Translate/localize into the selected target tab language, not into any other language.';
+  sys+='\n\nOUTPUT FORMAT (STRICT, CHEAP LINE MODE): Return EXACTLY '+lines.length+' lines. Each line must be ROW_NUMBER<TAB>TRANSLATION. Use one numeric row number and one real tab after it. Do not echo source text. Do not write headers such as id/type/text/translation. Do not output JSON or markdown.';
+  const user='SOURCE LINES (row number<TAB>source text):\n'+lines.map((l,i)=>`${i+1}\t${l}`).join('\n');
 
   const naiveTok=tok('Translate. Return id tab translation lines.')+tok(lines.map((l,i)=>`${i+1}\t${l}`).join('\n'));
   totalTok+=naiveTok;savedTok+=Math.max(0,naiveTok-tok(sys)-tok(user));
@@ -2758,17 +3357,17 @@ function parseLineOutput(raw,expectedLen){
     try{return repairJSON(s,expectedLen);}catch(_){/* fall through */}
   }
 
-  const lines=s.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+  const lines=s.split(/\r?\n/).map(x=>x.trim()).filter(Boolean).filter(x=>!/^\s*(?:id|row[_\s-]*number|number)\s*(?:\t|\||[:：])\s*(?:translation|translated\s*text|text|type)?\s*$/i.test(x));
   const out=new Array(expectedLen);
   for(const line of lines){
     // Accept: 12<TAB>text, 12 | text, 12. text, [12] text, 12 - text
-    let m=line.match(/^\[?(\d+)\]?\s*(?:	|\|\|\||\||[:：.)\-–—])\s*(.*)$/s);
+    let m=line.match(/^\[?(\d+)\]?\s*(?:\t|\\t|<TAB>|TAB|\|\|\||\||[:：.)\-–—])\s*(.*)$/is);
     if(!m) continue;
     const id=Number(m[1]);
     if(id>=1&&id<=expectedLen){
       let val=(m[2]||'').trim();
       // If the model accidentally echoes the one-letter type code, strip it.
-      val=val.replace(/^(?:w|d|s|m)\s*(?:	|\|\|\||\||[:：.)\-–—])\s*/i,'').trim();
+      val=stripLineProtocolArtifacts(val,'',currentLang);
       out[id-1]=val;
     }
   }
@@ -2776,7 +3375,7 @@ function parseLineOutput(raw,expectedLen){
 
   // Last fallback: when the model returns bare lines in exact order without ids.
   if(lines.length===expectedLen && !lines.some(x=>/^\s*\d+\s*$/.test(x))){
-    return lines.map(x=>x.replace(/^\[?\d+\]?\s*(?:	|\|\|\||\||[:：.)\-–—])\s*/,'').trim());
+    return lines.map(x=>stripLineProtocolArtifacts(x.replace(/^\[?\d+\]?\s*(?:\t|\\t|<TAB>|TAB|\|\|\||\||[:：.)\-–—])\s*/i,'').trim(),'',currentLang));
   }
 
   const got=out.filter(v=>typeof v==='string').length;
@@ -2846,23 +3445,87 @@ function setTablePage(p){
   tablePage=Math.max(0,Math.min(max,p));
   renderTable();
 }
+function rowIsPendingForUi(r){
+  return !!(r && !(r.status==='done'||r.status==='cached'||r.status==='tm'||r.status==='error'));
+}
+function rowHardFlagsForUi(r){
+  // v8.5.7: UI "lỗi kỹ thuật" không tính dòng đang chờ dịch.
+  // Pending được tách riêng thành nút "Chờ dịch" để không làm phình lỗi giả khi file chưa hoàn tất.
+  if(rowIsPendingForUi(r))return [];
+  try{return (hardQaFlagsForRow(r)||[]).filter(Boolean);}catch(_){return r&&r.status==='error'?[r._qaError||'error']:[];}
+}
+function rowSoftFlagsForUi(r){
+  try{
+    const out=String(r&&((r.pp||r.tgt)||'')||'');
+    if(!out.trim())return [];
+    return (runQA(out,currentLang,r.en,r._type||detectType(r.en))||[]).filter(Boolean);
+  }catch(_){return [];}
+}
+function rowMatchesTableFilter(r,mode){
+  const f=mode||tableFilter;
+  if(f==='all')return true;
+  if(!r)return false;
+  if(f==='hard')return !rowIsPendingForUi(r)&&(rowHardFlagsForUi(r).length>0||r.status==='error');
+  if(f==='soft')return rowSoftFlagsForUi(r).length>0;
+  if(f==='blank')return String(r.en||'').trim()&&!String(r.pp||r.tgt||'').trim();
+  if(f==='pending')return rowIsPendingForUi(r);
+  return true;
+}
+function getFilteredRowRefs(mode){
+  return rows.map((r,i)=>({r,i})).filter(x=>rowMatchesTableFilter(x.r,mode));
+}
+function countTableFilter(mode){
+  return getFilteredRowRefs(mode||'all').length;
+}
+function tableFilterLabel(){
+  const map={all:'Tất cả',hard:'Dòng lỗi kỹ thuật',soft:'QA cảnh báo',blank:'Ô rỗng',pending:'Chưa xử lý'};
+  return map[tableFilter]||'Tất cả';
+}
+function setTableFilter(mode){
+  tableFilter=mode||'all'; tablePage=0; renderTable(); updateErrorFilterButtons();
+}
+function updateErrorFilterButtons(){
+  const hard=countTableFilter('hard'), soft=countTableFilter('soft'), pending=countTableFilter('pending');
+  const errBtn=document.getElementById('err-filter-btn'), qaBtn=document.getElementById('qa-filter-btn'), pendingBtn=document.getElementById('pending-filter-btn'), allBtn=document.getElementById('all-filter-btn');
+  if(errBtn){errBtn.style.display=rows.length?'inline-block':'none';errBtn.className='btn btn-sm '+(tableFilter==='hard'?'btn-d':'');errBtn.textContent=`Hiện dòng lỗi (${hard.toLocaleString('vi')})`;}
+  if(qaBtn){qaBtn.style.display=rows.length?'inline-block':'none';qaBtn.className='btn btn-sm '+(tableFilter==='soft'?'btn-w':'');qaBtn.textContent=`QA cảnh báo (${soft.toLocaleString('vi')})`;}
+  if(pendingBtn){pendingBtn.style.display=rows.length?'inline-block':'none';pendingBtn.className='btn btn-sm '+(tableFilter==='pending'?'btn-w':'');pendingBtn.textContent=`Chờ dịch (${pending.toLocaleString('vi')})`;}
+  if(allBtn){allBtn.style.display=tableFilter!=='all'?'inline-block':'none';allBtn.textContent=`Tất cả (${rows.length.toLocaleString('vi')})`;}
+}
+function scrollToFirstError(){
+  const refs=getFilteredRowRefs();
+  if(!refs.length)return;
+  const idx=refs[0].i;
+  tableFilter='hard';
+  const hardRefs=getFilteredRowRefs();
+  const pos=hardRefs.findIndex(x=>x.i===idx);
+  tablePage=Math.max(0,Math.floor((pos>=0?pos:0)/tablePageSize));
+  renderTable();
+}
 function renderTable(){
   const prof=LANG_PROFILES[currentLang];
   const seen=new Map();
   rows.forEach((r,i)=>{if(r.pp){const k=r.pp.trim().toLowerCase();if(seen.has(k))seen.get(k).push(i);else seen.set(k,[i]);}});
   const dupIdx=new Set();seen.forEach(arr=>{if(arr.length>1)arr.forEach(i=>dupIdx.add(i));});
 
-  const totalPages=Math.max(1,Math.ceil(rows.length/tablePageSize));
+  const filteredRefs=getFilteredRowRefs();
+  const totalCount=filteredRefs.length;
+  const totalPages=Math.max(1,Math.ceil(totalCount/tablePageSize));
   if(tablePage>=totalPages)tablePage=totalPages-1;
   if(tablePage<0)tablePage=0;
   const start=tablePage*tablePageSize;
-  const end=Math.min(rows.length,start+tablePageSize);
-  const viewRows=rows.slice(start,end);
+  const end=Math.min(totalCount,start+tablePageSize);
+  const viewRefs=filteredRefs.slice(start,end);
 
   const pager=ensurePager();
-  if(rows.length>tablePageSize){
+  if(rows.length){
     pager.style.display='flex';
-    pager.innerHTML=`<span style="margin-right:auto;color:var(--text2);">Đang hiển thị ${start+1}-${end}/${rows.length.toLocaleString('vi')} dòng · render theo trang để chịu được file 42k</span>
+    const from=totalCount?start+1:0;
+    pager.innerHTML=`<span style="margin-right:auto;color:var(--text2);">${tableFilterLabel()}: ${from}-${end}/${totalCount.toLocaleString('vi')} dòng · Tổng file ${rows.length.toLocaleString('vi')} dòng</span>
+      <button class="btn btn-sm ${tableFilter==='all'?'btn-p':''}" onclick="setTableFilter('all')">Tất cả</button>
+      <button class="btn btn-sm ${tableFilter==='hard'?'btn-d':''}" onclick="setTableFilter('hard')">Lỗi kỹ thuật (${countTableFilter('hard').toLocaleString('vi')})</button>
+      <button class="btn btn-sm ${tableFilter==='soft'?'btn-w':''}" onclick="setTableFilter('soft')">QA cảnh báo (${countTableFilter('soft').toLocaleString('vi')})</button>
+      <button class="btn btn-sm ${tableFilter==='pending'?'btn-w':''}" onclick="setTableFilter('pending')">Chờ dịch (${countTableFilter('pending').toLocaleString('vi')})</button>
       <button class="btn btn-sm" onclick="setTablePage(0)" ${tablePage===0?'disabled':''}>« Đầu</button>
       <button class="btn btn-sm" onclick="goTablePage(-1)" ${tablePage===0?'disabled':''}>‹ Trước</button>
       <span class="badge">Trang ${tablePage+1}/${totalPages}</span>
@@ -2872,14 +3535,21 @@ function renderTable(){
     pager.style.display='none';
   }
 
-  document.getElementById('tbody').innerHTML=viewRows.map((r,off)=>{
-    const i=start+off;
+  const tbody=document.getElementById('tbody');
+  if(!viewRefs.length){
+    tbody.innerHTML=`<tr><td colspan="7" class="empty">Không có dòng nào trong bộ lọc “${tableFilterLabel()}”.</td></tr>`;
+    updateSum(); updateErrorFilterButtons(); return;
+  }
+  tbody.innerHTML=viewRefs.map(({r,i},off)=>{
     const tgtStyle=prof.rtl?'direction:rtl;text-align:right;':'';
     const tgtFont='font-family:var(--sans);';
     const isStale=r.status==='stale';
-    const qaFlags=r.pp&&!isStale?runQA(r.pp,currentLang,r.en,r._type||detectType(r.en)):[];
+    const hardFlags=!isStale?rowHardFlagsForUi(r):[];
+    const qaFlags=r.pp&&!isStale?rowSoftFlagsForUi(r):[];
     if(dupIdx.has(i)&&!isStale)qaFlags.push('♊');
-    const qaHtml=qaFlags.length?`<span class="tag t-qa">${qaFlags.join(' ')}</span>`:'';
+    const hardHtml=hardFlags.length?`<span class="tag t-er" title="Hard QA: ${esc(hardFlags.join('; '))}">⛔ ${esc(hardFlags.join(' '))}</span>`:'';
+    const softHtml=qaFlags.length?`<span class="tag t-qa" title="Soft QA">${qaFlags.join(' ')}</span>`:'';
+    const qaHtml=[hardHtml,softHtml].filter(Boolean).join(' ');
     const rawDisp=r.tgt
       ?(isStale?`<span style="text-decoration:line-through;opacity:.6;">${esc(r.tgt)}</span>`:esc(r.tgt))
       :'—';
@@ -2887,7 +3557,7 @@ function renderTable(){
       ?(isStale?`<span style="text-decoration:line-through;opacity:.6;">${esc(r.pp)}</span>`
         :esc(r.pp))
       :(r.tgt&&!isStale?'<span style="color:var(--text3);font-size:10px;">= raw</span>':'—');
-    return`<tr class="${isStale?'stale-row':''}">
+    return`<tr class="${isStale?'stale-row ':''}${hardFlags.length||r.status==='error'?'error-row':''}" title="Excel row ${i+2}">
       <td class="n-c">${i+1}</td>
       <td class="en-c">${esc(r.en)}</td>
       <td id="raw-${i}" class="${r.tgt?'tgt-c':'tgt-e'}" style="${tgtStyle}${tgtFont}">${rawDisp}</td>
@@ -2898,6 +3568,7 @@ function renderTable(){
     </tr>`;
   }).join('');
   updateSum();
+  updateErrorFilterButtons();
 }
 function sIcon(s,tmScore){
   if(s==='done'||s==='cached')return'<span class="tag t-ok">✓</span>';
@@ -2940,10 +3611,81 @@ function updateStats(){
   const pct=totalTok>0?Math.round(savedTok/totalTok*100):0;
   document.getElementById('sv-save').textContent='~'+pct+'%';
   document.getElementById('statsrow').style.display='flex';
+  updateErrorFilterButtons();
+  updateRunCostUi();
+}
+
+function getRetryCandidateRows(){
+  const failed=[];
+  try{findHardQaFailedRows(rows).forEach(r=>{if(r&&!rowIsPendingForUi(r))failed.push(r);});}catch(_){ }
+  const pending=rows.filter(r=>rowIsPendingForUi(r));
+  const set=new Set([...failed,...pending]);
+  return [...set].filter(r=>r&&String(r.en||'').trim());
+}
+function estimateRowsApiCost(rowList,model){
+  const list=(rowList||[]).filter(r=>r&&String(r.en||'').trim());
+  if(!list.length)return {rows:0,units:0,batches:0,input:0,output:0,cost:0,high:0};
+  const prof=LANG_PROFILES[currentLang]||{};
+  const mdl=model||((document.getElementById('mdl-main')||{}).value)||'gpt-4o-mini';
+  const smart=buildSmartDedupUnits(list);
+  const units=smart.units||list;
+  const batches=mkBatches(units);
+  const contentTok=units.reduce((s,r)=>s+tok(r.en),0);
+  const sysPromptTok=tok(getPrompt(currentLang,currentPromptType||'dialogue'));
+  const lineProtocolOverhead={vi:420,ko:500,tr:480,ar:820,km:680,de:560}[currentLang]||520;
+  const rowProtocolOverhead=units.length*1;
+  const contextTok=batches.length?Math.min(720,260+Math.ceil(contentTok/Math.max(1,units.length))*6)*Math.max(0,batches.length-1):0;
+  let glossTok=0;
+  try{
+    const merged=getActiveMergedGloss();
+    batches.forEach(batch=>{
+      const lower=batch.map(r=>String(r.en||'').toLowerCase());
+      Object.entries(merged).forEach(([src,tgt])=>{
+        if(src&&lower.some(l=>l.includes(String(src).toLowerCase())))glossTok+=tok(src)+tok(tgt)+4;
+      });
+    });
+  }catch(_){ }
+  const input=Math.round(contentTok+(batches.length*(sysPromptTok+20+lineProtocolOverhead))+rowProtocolOverhead+contextTok+glossTok);
+  const outputTokRatio={vi:1.00,ko:1.18,tr:1.12,ar:1.30,km:1.45,de:1.18}[currentLang]||(prof.tokRatio||1.15);
+  const output=Math.round(contentTok*outputTokRatio);
+  const p=priceForModel(mdl);
+  const cost=(input/1e6*p.in)+(output/1e6*p.out);
+  const high=cost*1.35;
+  return {rows:list.length,units:units.length,batches:batches.length,input,output,cost,high};
+}
+function updateRunCostUi(stateLabel){
+  const done=rows.filter(r=>r.status==='done'||r.status==='cached'||r.status==='tm').length;
+  const hard=(()=>{try{return countTableFilter('hard');}catch(_){return 0;}})();
+  const pending=(()=>{try{return countTableFilter('pending');}catch(_){return 0;}})();
+  const retryRows=getRetryCandidateRows();
+  const est=estimateRowsApiCost(retryRows);
+  lastRetryEstimate=est;
+  const total=rows.length||0;
+  let state=stateLabel||'Sẵn sàng';
+  if(total){
+    if(pending>0)state='Đang/chưa xong';
+    else if(hard>0)state='Còn lỗi';
+    else if(done>=total)state='Hoàn tất';
+  }
+  const set=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=val;};
+  set('rt-state',state);
+  set('rt-progress',done.toLocaleString('vi')+'/'+total.toLocaleString('vi'));
+  set('rt-spent','$'+(runCostUSD||0).toFixed(4));
+  set('rt-tokens',(runInputTok||0).toLocaleString('vi')+' / '+(runOutputTok||0).toLocaleString('vi'));
+  set('rt-retry-rows',retryRows.length.toLocaleString('vi'));
+  set('rt-retry-cost',est.rows?fmtUSDRange(est.cost,est.high):'$0.0000');
+  const retry=document.getElementById('retry-btn');
+  if(retry){
+    retry.title=est.rows?`Retry ${est.rows.toLocaleString('vi')} dòng · ${est.units.toLocaleString('vi')} API units · ${est.batches.toLocaleString('vi')} patch · ước tính ${fmtUSDRange(est.cost,est.high)} với model hiện tại`:'';
+    if(est.rows)retry.textContent=`Thử lại lỗi (~${fmtUSDRange(est.cost,est.high)})`;
+    else retry.textContent='Thử lại lỗi';
+  }
+  const tag=document.getElementById('cost-summary-tag');
+  if(tag&&runCostUSD>0){tag.textContent='Run thực tế ~$'+runCostUSD.toFixed(4)+(est.rows?' · retry ~'+fmtUSDRange(est.cost,est.high):'');}
 }
 
 function resetRunUiForFreshImport(msg='Đã load file mới — sẵn sàng dịch.'){
-  apiCallCount=0;savedTok=0;totalTok=0;ppCount=0;tmHitCount=0;abortFlag=false;_globalStyleLock=null;
+  apiCallCount=0;savedTok=0;totalTok=0;ppCount=0;tmHitCount=0;abortFlag=false;qaRetryCount=0;qaFinalBlockCount=0;qaAutoFixedCount=0;runInputTok=0;runOutputTok=0;runCostUSD=0;runStartedAt=0;runFinishedAt=0;lastRetryEstimate=null;_globalStyleLock=null; tableFilter='all'; tablePage=0; tableFilter='all'; tablePage=0;
   try{activeApiControllers.forEach(c=>{try{c.abort();}catch(_){}});activeApiControllers.clear();}catch(_){ }
   const pf=document.getElementById('pf');if(pf)pf.style.width='0%';
   const st=document.getElementById('tst');if(st){st.textContent=msg;st.className='st ok';}
@@ -2961,32 +3703,32 @@ function resetRunUiForFreshImport(msg='Đã load file mới — sẵn sàng dị
 function updateCostEstimate(){
   const prof=LANG_PROFILES[currentLang];
 
-  // Dedup simulation: count unique rows (same logic as translateAll)
-  const seenKeys=new Set();
-  let uniqueCount=0,dedupCount=0;
-  rows.forEach(r=>{
-    const k=normKey(r.en);
-    if(seenKeys.has(k)){dedupCount++;}else{seenKeys.add(k);uniqueCount++;}
-  });
+  // Dedup simulation happens below via buildSmartDedupUnits()
+  let dedupCount=0;
 
-  // Only unique rows get sent to API
-  const uniqueRows=[];
-  const seen2=new Set();
-  rows.forEach(r=>{const k=normKey(r.en);if(!seen2.has(k)){seen2.add(k);uniqueRows.push(r);}});
+  // Exact glossary local fill + exact dedup + Smart Template Dedup simulation.
+  // Rows that exactly match glossary do NOT need model tokens.
+  const typedRows=rows.map(r=>{r._type=r._type||detectType(r.en);return r;});
+  const apiCandidateRows=typedRows.filter(r=>!exactGlossTranslationFor(r.en));
+  const localGlossRows=typedRows.length-apiCandidateRows.length;
+  const smart=buildSmartDedupUnits(apiCandidateRows);
+  dedupCount=smart.totalSaved+localGlossRows;
+  const uniqueRows=smart.units;
+  const uniqueCount=smart.apiUnique;
   const batches=mkBatches(uniqueRows);
   const numBatches=batches.length;
 
-  // Content tokens (unique source text only)
+  // Content tokens (API units only: exact unique rows + smart templates)
   const contentTok=uniqueRows.reduce((s,r)=>s+tok(r.en),0);
 
   // System prompt + line-protocol wrapper per patch
-  const sysPromptTok=tok(prof.systemPrompt);
+  const sysPromptTok=tok(getPrompt(currentLang,currentPromptType||'dialogue'));
   // v8.3.3 estimate fix:
   // The old formula counted system/prompt almost once, but every API call pays
   // system prompt + line protocol + format rules + id/type wrappers again.
   // This per-batch overhead is calibrated from real usage meter runs.
   const lineProtocolOverhead={vi:420,ko:500,tr:480,ar:820,km:680,de:560}[currentLang]||520;
-  const rowProtocolOverhead=uniqueRows.length*2; // id<TAB>type<TAB> wrappers in user prompt
+  const rowProtocolOverhead=uniqueRows.length*1; // id<TAB> wrappers in user prompt
   const sysOverhead=numBatches*(sysPromptTok+20+lineProtocolOverhead)+rowProtocolOverhead;
 
   // 42k fixed mode injects semantic sync context per patch.
@@ -3011,7 +3753,7 @@ function updateCostEstimate(){
 
   // Base output tokens. v8.3.3 uses language-specific real-output multipliers,
   // because Arabic/Khmer/German tokenize and expand very differently from English.
-  const outputTokRatio={vi:1.05,ko:1.30,tr:1.25,ar:2.20,km:1.85,de:1.45}[currentLang]||(prof.tokRatio||1.25);
+  const outputTokRatio={vi:1.00,ko:1.18,tr:1.12,ar:1.30,km:1.45,de:1.18}[currentLang]||(prof.tokRatio||1.15);
   const totalIn=contentTok+sysOverhead+contextTok+glossTok;
   const totalOut=Math.round(contentTok*outputTokRatio);
   const grandTotal=totalIn+totalOut;
@@ -3033,7 +3775,7 @@ function updateCostEstimate(){
 
   // Savings from dedup
   const savedByDedup=dedupCount>0
-    ? `<span class="dedup-save">🔁 dedup bỏ qua ${dedupCount} dòng — tiết kiệm ~${Math.round(dedupCount/(rows.length||1)*100)}%</span>`
+    ? `<span class="dedup-save">🔁 local/gloss/dedup bỏ qua ${dedupCount} dòng — glossary ${localGlossRows}, exact ${smart.exactSaved}, template ${smart.templateSaved} · tiết kiệm ~${Math.round(dedupCount/(rows.length||1)*100)}%</span>`
     : '';
 
   // Update token breakdown display
@@ -3089,7 +3831,7 @@ function updateCostEstimate(){
     if(note){
       const pct=Math.round(retryBuffer*100);
       const stressPct=Math.round(stressBuffer*100);
-      note.innerHTML=`* v8.3.3: Estimate đã tính prompt/context/glossary theo từng batch/API call và hệ số output riêng cho từng ngôn ngữ. Khoảng dự phòng = base → +${pct}% cho recovery/split nhẹ. Nếu output hư nhiều có thể gần mức recovery (+${stressPct}%). Dedup đã trừ duplicate rows. Giá chỉ là tham khảo theo bảng trong tool.`;
+      note.innerHTML=`* v8.5.7: Estimate đã tính Exact Glossary Local Fill + Smart Template Dedup + relevant glossary theo từng batch/API call. Robust Line Guard chống lỗi dính id/header mà không gọi thêm API. Khoảng dự phòng = base → +${pct}% cho recovery/split nhẹ. Nếu output hư nhiều có thể gần mức recovery (+${stressPct}%). Dedup đã trừ duplicate rows. Giá chỉ là tham khảo theo bảng trong tool.`;
     }
   }
 
@@ -3098,10 +3840,58 @@ function updateCostEstimate(){
 }
 
 /* ══════════════════════════════════════════
+   API KEY INPUT HARDENING
+   v8.4.2: chấp nhận sk- / sk-proj-, tự bỏ Bearer, dấu cách, zero-width char.
+══════════════════════════════════════════ */
+function getApiKey(){
+  const el=document.getElementById('api-key');
+  if(!el)return '';
+  let key=String(el.value||'')
+    .replace(/[\u200B-\u200D\uFEFF]/g,'')
+    .trim()
+    .replace(/^Bearer\s+/i,'')
+    .replace(/^['"]|['"]$/g,'')
+    .replace(/\s+/g,'');
+  if(el.value && el.value!==key)el.value=key;
+  return key;
+}
+function apiErrorText(e){
+  let msg=(e&&e.message)?String(e.message):String(e||'Unknown error');
+  if(/Failed to fetch|NetworkError|Load failed/i.test(msg)){
+    msg='Không gọi được OpenAI API từ browser. Hãy mở file qua localhost (python -m http.server) hoặc kiểm tra mạng/CORS/adblock. Nếu vẫn lỗi, cần proxy/backend nhỏ.';
+  }
+  if(/invalid_api_key|Incorrect API key|401/i.test(msg)){
+    msg='API key sai/không còn hiệu lực, hoặc key không thuộc project đang bật billing.';
+  }
+  if(/model_not_found|does not exist|access.*model/i.test(msg)){
+    msg='Model đang chọn không khả dụng với API key này. Thử gpt-4o-mini trước.';
+  }
+  return msg;
+}
+function onApiKeyInput(){
+  const key=getApiKey();
+  const st=document.getElementById('api-st');
+  const dot=document.getElementById('api-dot');
+  if(!st)return;
+  if(!key){
+    st.textContent='Chưa nhập API key.';st.className='st wt';
+    if(dot)dot.style.background='#9e9d99';
+    return;
+  }
+  if(!/^sk-/.test(key)){
+    st.textContent='Đã nhập, nhưng key nên bắt đầu bằng sk- hoặc sk-proj-.';st.className='st er';
+    if(dot)dot.style.background='#E24B4A';
+    return;
+  }
+  st.textContent='Đã nhận API key — bấm Test hoặc Dịch để kiểm tra.';st.className='st ok';
+  if(dot)dot.style.background='#c79a28';
+}
+
+/* ══════════════════════════════════════════
    API TEST
 ══════════════════════════════════════════ */
 async function testApi(){
-  const key=document.getElementById('api-key').value.trim();
+  const key=getApiKey();
   const model=document.getElementById('mdl-main').value;
   const st=document.getElementById('api-st');
   if(!key){st.textContent='Cần khóa API.';st.className='st er';return;}
@@ -3115,7 +3905,7 @@ async function testApi(){
     document.getElementById('mdl-badge').textContent=model;document.getElementById('mdl-badge').style.display='inline-block';
     st.textContent='Đã kết nối ✓';st.className='st ok';
     if(rows.length)updateCostEstimate();
-  }catch(e){document.getElementById('api-dot').style.background='#E24B4A';st.textContent='Lỗi: '+e.message;st.className='st er';}
+  }catch(e){document.getElementById('api-dot').style.background='#E24B4A';st.textContent='Lỗi: '+apiErrorText(e);st.className='st er';}
 }
 
 /* ══════════════════════════════════════════
@@ -3270,20 +4060,20 @@ function buildSemanticSyncContext(batch,type){
   return ctx.slice(0,850);
 }
 function isSplitworthyError(err){
-  return /JSON|repairJSON|Cannot repair|MODEL_OUTPUT_TRUNCATED|Output count|length mismatch|Parser guard|Unterminated|Unexpected end/i.test(String(err&&err.message||err));
+  return /JSON|repairJSON|Cannot repair|MODEL_OUTPUT_TRUNCATED|Output count|length mismatch|Parser guard|LINE_PARSE|Unterminated|Unexpected end/i.test(String(err&&err.message||err));
 }
 function extractLockedTokens(s){
-  return String(s||'').match(/<[^>]+>|\[[^\]\r\n]{0,180}\]|\{[^}\r\n]{1,160}\}|%(?:\d+\$)?[A-Za-z][A-Za-z0-9_]*|`[^`\r\n]{1,180}`/g)||[];
+  return String(s||'').match(/<[^>]+>|\[[^\]\r\n]{0,180}\]|\{[^}\r\n]{1,160}\}|%(?:\d+\$)?(?:[-+#0 ]*\d*(?:\.\d+)?[sdifuoxX])|`[^`\r\n]{1,180}`/g)||[];
 }
 function removeLockedTokens(s){
-  return String(s||'').replace(/<[^>]+>|\[[^\]\r\n]{0,180}\]|\{[^}\r\n]{1,160}\}|%(?:\d+\$)?[A-Za-z][A-Za-z0-9_]*|`[^`\r\n]{1,180}`/g,'').trim();
+  return String(s||'').replace(/<[^>]+>|\[[^\]\r\n]{0,180}\]|\{[^}\r\n]{1,160}\}|%(?:\d+\$)?(?:[-+#0 ]*\d*(?:\.\d+)?[sdifuoxX])|`[^`\r\n]{1,180}`/g,'').trim();
 }
 function repairLockedTokensLocal(src,out){
   const srcTokens=extractLockedTokens(src), outTokens=extractLockedTokens(out);
   if(!srcTokens.length)return out;
   if(srcTokens.length===outTokens.length && srcTokens.every((t,i)=>t===outTokens[i]))return out;
   const srcStr=String(src||'');
-  const TOK='(?:<[^>]+>|\\[[^\\]\\r\\n]{0,180}\\]|\\{[^}\\r\\n]{1,160}\\}|%(?:\\d+\\$)?[A-Za-z][A-Za-z0-9_]*|`[^`\\r\\n]{1,180}`)';
+  const TOK='(?:<[^>]+>|\\[[^\\]\\r\\n]{0,180}\\]|\\{[^}\\r\\n]{1,160}\\}|%(?:\\d+\\$)?(?:[-+#0 ]*\\d*(?:\\.\\d+)?[sdifuoxX])|`[^`\\r\\n]{1,180}`)';
   const leading=(srcStr.match(new RegExp('^(?:\\s*'+TOK+')+'))||[''])[0].trim();
   const trailing=(srcStr.match(new RegExp('(?:\\s*'+TOK+')+\\s*$'))||[''])[0].trim();
   const leadTokens=extractLockedTokens(leading), trailTokens=extractLockedTokens(trailing);
@@ -3295,6 +4085,8 @@ function repairLockedTokensLocal(src,out){
 }
 function priceForModel(model){
   if(model==='gpt-4o-mini')return {in:0.150,out:0.600};
+  if(model==='gpt-4o-mini-2024-07-18')return {in:0.150,out:0.600};
+  if(model==='gpt-4.1-nano')return {in:0.100,out:0.400};
   if(model==='gpt-4.1-mini')return {in:0.400,out:1.600};
   if(model==='gpt-4.1')return {in:2.000,out:8.000};
   if(model==='gpt-4o')return {in:2.500,out:10.000};
@@ -3308,6 +4100,7 @@ function addUsageCost(data,model){
   runInputTok+=input;runOutputTok+=output;
   const p=priceForModel(model);
   runCostUSD+=(input*p.in+output*p.out)/1000000;
+  try{updateRunCostUi('Đang chạy');}catch(_){ }
 }
 async function callChatCompletion({key,model,body,onWait}){
   const post=async(b)=>{
@@ -3323,7 +4116,7 @@ async function callChatCompletion({key,model,body,onWait}){
     const fallback={...body,response_format:{type:'json_object'}};
     data=await post(fallback);
   }
-  if(data.error){throw new Error('['+data.error.code+'] '+data.error.message);}
+  if(data.error){throw new Error('['+(data.error.code||data.error.type||'api_error')+'] '+data.error.message);}
   addUsageCost(data,model);
   const choice=data.choices&&data.choices[0];
   if(!choice||!choice.message||!choice.message.content)throw new Error('No model output');
@@ -3376,11 +4169,11 @@ async function translateOnePatch(batch,ctx,depth=0,label=''){
         throw parseErr;
       }
       logError(batchNo-1,'line','small patch line retry once: '+parseErr.message);
-      const retrySys=baseSys+'\n\nSTRICT LINE RETRY: Output ONLY '+lines.length+' lines. Each line: id<TAB>translation. No JSON. No numbering besides the id. No markdown. No explanation.';
+      const retrySys=baseSys+'\n\nSTRICT LINE RETRY: Output ONLY '+lines.length+' lines. Each line: ROW_NUMBER<TAB>TRANSLATION. The row number must be numeric only. Do NOT write header/type/text/translation. No JSON. No markdown. No explanation.';
       raw=await callAPI(retrySys);
       arr=prompt.protocol==='line'?parseLineOutput(raw,lines.length):repairJSON(raw,lines.length);
     }
-    arr=arr.map(s=>stripInternalTypeLabels(String(s||'').replace(/^\s*\[\d+\]\s*/,''),''));
+    arr=arr.map((s,idx)=>sanitizeLLMOutput(String(s||'').replace(/^\s*\[\d+\]\s*/,''),currentLang,rowTypes[idx]||batchType,lines[idx]||''));
     if(arr[0]==='items')throw new Error('Parser guard: object key items leaked into translations');
     if(arr.length!==lines.length)throw new Error('Output count mismatch: got '+arr.length+', expected '+lines.length);
 
@@ -3390,9 +4183,8 @@ async function translateOnePatch(batch,ctx,depth=0,label=''){
     break;
   }
 
+  let appliedCount=0;
   batch.forEach((r,j)=>{
-    const ri=rows.indexOf(r);
-    if(ri<0)return;
     const rowType=r._type||batchType;
     let llmOut=Array.isArray(arr)?(arr[j]||''):String(arr);
     llmOut=sanitizeLLMOutput(repairLockedTokensLocal(r.en,llmOut),currentLang,rowType,r.en);
@@ -3402,23 +4194,10 @@ async function translateOnePatch(batch,ctx,depth=0,label=''){
       ppOut=sanitizeLLMOutput(repairLockedTokensLocal(r.en,out),currentLang,rowType,r.en);
       if(changed||ppOut!==llmOut)ppCount++;
     }
-    rows[ri].tgt=llmOut;
-    rows[ri].pp=ppOut;
-    rows[ri].status='done';
-    rows[ri].mode=rowType;
-    rows[ri]._type=rowType;
-    cache.set(cacheKey(r.en,rowType),{tgt:llmOut,pp:ppOut});
-    tmStore(r.en,llmOut,ppOut,currentLang,rowType);
-
-    const rawCell=document.getElementById('raw-'+ri);
-    const ppCell=document.getElementById('pp-'+ri);
-    const sCell=document.getElementById('s-'+ri);
-    if(rawCell){rawCell.className='tgt-c';rawCell.style.direction=prof.rtl?'rtl':'ltr';rawCell.style.fontFamily='var(--sans)';rawCell.textContent=llmOut;}
-    if(ppCell){const changed=ppOut!==llmOut;ppCell.className=changed?'pp-c':'tgt-c';ppCell.style.direction=prof.rtl?'rtl':'ltr';ppCell.style.fontFamily='var(--sans)';ppCell.textContent=ppOut;}
-    if(sCell)sCell.innerHTML=sIcon('done');
+    appliedCount += applyUnitTranslation(r,llmOut,ppOut,usePP,prof);
   });
   saveCP();
-  return batch.length;
+  return appliedCount || batch.length;
 }
 async function translatePatchAdaptive(batch,ctx,depth=0,label=''){
   if(abortFlag||!batch.length)return 0;
@@ -3459,7 +4238,7 @@ function clearCache(){
    MAIN TRANSLATE — FULL PIPELINE
 ══════════════════════════════════════════ */
 async function translateAll(){
-  const key=document.getElementById('api-key').value.trim();
+  const key=getApiKey();
   const mainMdl=document.getElementById('mdl-main').value;
   const usePP=document.getElementById('use-pp').checked;
   const doCache=document.getElementById('use-cache').checked;
@@ -3479,7 +4258,7 @@ async function translateAll(){
 
   if(document.getElementById('use-typo').checked)fixRowsTyposSilently();
 
-  apiCallCount=0;savedTok=0;totalTok=0;abortFlag=false;ppCount=0;runInputTok=0;runOutputTok=0;runCostUSD=0;
+  apiCallCount=0;savedTok=0;totalTok=0;abortFlag=false;ppCount=0;runInputTok=0;runOutputTok=0;runCostUSD=0;runStartedAt=Date.now();runFinishedAt=0;lastRetryEstimate=null;qaRetryCount=0;qaFinalBlockCount=0;qaAutoFixedCount=0;updateRunCostUi('Đang chạy');
   // Lock style once for the whole 42k run → all patches share one semantic/register decision.
   {
     const lockSel=document.getElementById('style-lock').value;
@@ -3505,6 +4284,12 @@ async function translateAll(){
   st.innerHTML='<span class="blink">Đang kiểm tra cache/TM và chia batch…</span>';
   await yieldUI();
 
+  const localGlossCount=applyExactGlossaryLocal(usePP);
+  if(localGlossCount>0){
+    st.textContent='Glossary local fill: '+localGlossCount.toLocaleString('vi')+' dòng khớp 100% — 0 API cost.';
+    renderTable();updateStats();await yieldUI();
+  }
+
   if(doCache){
     rows.forEach(r=>{
       const type=detectType(r.en);r._type=type;
@@ -3527,18 +4312,20 @@ async function translateAll(){
   });
   rows.forEach(r=>{if(r.status==='stale'){r.status='pending';r.tgt='';r.pp='';r._forceApi=true;}});
 
-  const pending=rows.filter(r=>r.status==='pending');
-  if(!pending.length){
+  const pendingRows=rows.filter(r=>r.status==='pending');
+  if(!pendingRows.length){
     btn.disabled=false;pf.style.width='100%';
     document.getElementById('exp-btn').style.display='inline-block';
     setWorkerPanelVisible(false);
     st.textContent='Cache hit — 0 API calls!';st.className='st ok';
-    renderTable();updateStats();return;
+    renderTable();updateStats();updateRunCostUi('Hoàn tất');return;
   }
 
   document.getElementById('ps-llm').className='pipe-step active';
   document.getElementById('ps-pp').className='pipe-step'+(usePP?' active':'');
 
+  const smartRun=buildSmartDedupUnits(pendingRows);
+  const pending=smartRun.units;
   const batches=mkBatches(pending);let done=0;
   await yieldUI();
   const prof=LANG_PROFILES[currentLang];
@@ -3547,16 +4334,17 @@ async function translateAll(){
   let nextBatchIndex=0,lastUiUpdate=0,lastRenderAt=0;
   const workerStates=Array.from({length:workers},(_,i)=>({id:i+1,text:'sẵn sàng',cls:'wait'}));
   setWorkerPanelVisible(workers>1);updateWorkerPanel(workerStates);
-  st.textContent=`Đã chia ${pending.length.toLocaleString('vi')} dòng thành ${totalBatches.toLocaleString('vi')} patch · v8.3.2 Cost-Opt ${workers} luồng · prompt gọn hơn, max_tokens đủ rộng để tránh fail-call, local QA giữ tag/code, có cost meter thực tế.`;st.className='st ok';
+  st.textContent=`Đã gom ${pendingRows.length.toLocaleString('vi')} dòng còn lại → ${pending.length.toLocaleString('vi')} API units (${smartRun.totalSaved.toLocaleString('vi')} dòng tiết kiệm; template ${smartRun.templateSaved.toLocaleString('vi')}; glossary local ${localGlossCount.toLocaleString('vi')}) · ${totalBatches.toLocaleString('vi')} patch · v8.5.7 Audited Ultra-Low-Cost ${workers} luồng.`;st.className='st ok';
 
   const refreshProgress=()=>{
     const now=Date.now();
     if(now-lastUiUpdate<350)return;
     lastUiUpdate=now;
     const terminalDone=rows.filter(r=>r.status==='done'||r.status==='cached'||r.status==='error').length;
-    pf.style.width=Math.max(2,Math.round(Math.max(done,terminalDone)/pending.length*100))+'%';
+    pf.style.width=Math.max(2,Math.round(Math.max(done,terminalDone)/pendingRows.length*100))+'%';
     updateSum();updateStats();
     if(runCostUSD>0){const costTag=document.getElementById('cost-summary-tag'); if(costTag)costTag.textContent='Run thực tế ~$'+runCostUSD.toFixed(4);}
+    updateRunCostUi('Đang chạy');
     const anyDone=rows.some(r=>r.status==='done'||r.status==='cached');
     if(anyDone)document.getElementById('exp-btn').style.display='inline-block';
     if(now-lastRenderAt>5000){lastRenderAt=now;renderTable();}
@@ -3583,27 +4371,52 @@ async function translateAll(){
   }
 
   await Promise.all(Array.from({length:workers},(_,i)=>workerLoop(i+1)));
+
+  // v8.5.7: mandatory post-batch QA gate. Retry only invalid rows, never the full file.
+  const qaGateResult=abortFlag?{attempted:0,fixed:0,remaining:0}:await runPostBatchQaGate({key,mainMdl,usePP,st,prof,batchNo:1,totalBatches:1,workers:1,workerId:1},2);
   saveCP(true);
+  runFinishedAt=Date.now();
+  updateRunCostUi(abortFlag?'Đã dừng':'Đang tổng kết');
 
   btn.disabled=false;document.getElementById('stop-btn').style.display='none';document.getElementById('stop-btn').disabled=false;document.getElementById('stop-btn').textContent='⏹ Dừng';activeApiControllers.clear();
   document.getElementById('ps-llm').className='pipe-step done';
   document.getElementById('ps-pp').className='pipe-step done';
   document.getElementById('ps-qa').className='pipe-step done';
-  const errs=rows.filter(r=>r.status==='error').length;
+  const pendingLeft=countTableFilter('pending');
+  const hardLeft=findHardQaFailedRows(rows).filter(r=>!rowIsPendingForUi(r)).length;
+  const errs=hardLeft;
   if(!abortFlag){
-    if(!errs){
+    if(!errs && !pendingLeft){
       try{localStorage.removeItem(CP_KEY);}catch(_){}
-      st.textContent=`Hoàn tất — ${rows.length.toLocaleString('vi')} items · ${apiCallCount} API calls · ${ppCount} post-processed · thực chi run này ~$${runCostUSD.toFixed(4)} (${runInputTok}/${runOutputTok} tok)`;
+      const qaMsg=qaRetryCount?` · QA retry ${qaRetryCount.toLocaleString('vi')} dòng${qaFinalBlockCount?` · còn ${qaFinalBlockCount.toLocaleString('vi')} lỗi`:''}`:'';
+      st.textContent=`Hoàn tất — ${rows.length.toLocaleString('vi')} items · ${apiCallCount} API calls · ${ppCount} post-processed · smart saved ${smartRun.totalSaved.toLocaleString('vi')} dòng${qaMsg} · thực chi run này ~$${runCostUSD.toFixed(4)} (${runInputTok}/${runOutputTok} tok)`;
       st.className='st ok';
     }else{
-      st.textContent='Xong với '+errs+' lỗi';st.className='st er';
+      const retryEst=estimateRowsApiCost(getRetryCandidateRows());
+      st.textContent='Xong với '+errs.toLocaleString('vi')+' lỗi kỹ thuật'+(pendingLeft?` · ${pendingLeft.toLocaleString('vi')} dòng còn chờ dịch`:'')+` · đã dùng ~$${runCostUSD.toFixed(4)} · retry ước tính ${retryEst.rows?fmtUSDRange(retryEst.cost,retryEst.high):'$0.0000'}`;st.className='st er';
       document.getElementById('retry-btn').style.display='inline-block';
     }
   }
   document.getElementById('exp-btn').style.display='inline-block';
-  renderTable();updateStats();
+  renderTable();updateStats();updateRunCostUi((errs||pendingLeft)?'Còn lỗi':'Hoàn tất');
 }
-async function retryErrors(){rows.forEach(r=>{if(r.status==='error')r.status='pending';});document.getElementById('retry-btn').style.display='none';await translateAll();}
+async function retryErrors(){
+  // v8.5.7: retry mọi dòng lỗi hard QA + dòng pending, không chỉ status=error.
+  const failed=findHardQaFailedRows(rows);
+  const pend=rows.filter(r=>rowIsPendingForUi(r));
+  const set=new Set([...failed,...pend]);
+  set.forEach(r=>{
+    const type=r._type||detectType(r.en); r._type=type;
+    try{cache.delete(cacheKey(r.en,type));}catch(_){}
+    r.status='pending'; r.tgt=''; r.pp=''; r._forceApi=true; r._qaError='';
+  });
+  const est=estimateRowsApiCost([...set]);
+  const st=document.getElementById('tst');
+  if(st){st.textContent=`Retry ${set.size.toLocaleString('vi')} dòng · ước tính ${est.rows?fmtUSDRange(est.cost,est.high):'$0.0000'} với model hiện tại…`;st.className='st ok';}
+  updateRunCostUi('Chuẩn bị retry');
+  document.getElementById('retry-btn').style.display='none';
+  await translateAll();
+}
 
 /* ══════════════════════════════════════════
    EXPORT (includes both columns)
@@ -3611,18 +4424,56 @@ async function retryErrors(){rows.forEach(r=>{if(r.status==='error')r.status='pe
 function exportExcel(){
   const prof=LANG_PROFILES[currentLang];
   const wbOut=XLSX.utils.book_new();
-  const data=[['English','LLM Raw','Post-Processed ('+prof.viName+')'],...rows.map(r=>[r.en,r.tgt,r.pp||r.tgt])];
+  const cleanExportCell=(v,src,type='dialogue')=>sanitizeLLMOutput(String(v||''),currentLang,type,src||'');
+  const qaRows=buildExportQaRows();
+  const data=[[getSourceProfile().viName,'LLM Raw','Post-Processed ('+prof.viName+')','Status','QA Hard Flags'],...rows.map(r=>{
+    const type=r._type||detectType(r.en);
+    let raw=cleanExportCell(r.tgt,r.en,type);
+    let pp=cleanExportCell(r.pp||r.tgt,r.en,type);
+    const hard=rowIsPendingForUi(r)?['pending_not_translated']:hardQaFlagsForRow({...r,tgt:raw,pp:pp});
+    // Never silently export a blank target for a non-blank source.
+    if(String(r.en||'').trim()&&!raw.trim())raw=rowIsPendingForUi(r)?'__PENDING_NOT_TRANSLATED__':'__ERROR_EMPTY_TRANSLATION__';
+    if(String(r.en||'').trim()&&!pp.trim())pp=rowIsPendingForUi(r)?'__PENDING_NOT_TRANSLATED__':'__ERROR_EMPTY_TRANSLATION__';
+    return [r.en,raw,pp,r.status||'',hard.join('; ')];
+  })];
   const ws=XLSX.utils.aoa_to_sheet(data);
-  ws['!cols']=[{wch:50},{wch:40},{wch:40}];
+  ws['!cols']=[{wch:50},{wch:40},{wch:40},{wch:12},{wch:34}];
   XLSX.utils.book_append_sheet(wbOut,ws,'Translated');
-  XLSX.writeFile(wbOut,'weapon_names_'+currentLang+'_'+Date.now()+'.xlsx');
+
+  const summary=[
+    ['Metric','Value'],
+    ['Tool version','v8.5.7'],
+    ['Source → Target',sourceLang+' → '+currentLang],
+    ['Translation mode',translationMode],
+    ['Rows',rows.length],
+    ['API calls',apiCallCount],
+    ['Input tokens',runInputTok],
+    ['Output tokens',runOutputTok],
+    ['Actual cost USD','$'+runCostUSD.toFixed(4)],
+    ['QA retry rows',qaRetryCount],
+    ['QA final blocking issues',qaRows.filter(x=>x.hard && !String(x.hard).includes('pending_not_translated')).length],
+    ['Pending rows at export',rows.filter(r=>rowIsPendingForUi(r)).length],
+    ['Export safety','Blank targets are replaced with __ERROR_EMPTY_TRANSLATION__; pending rows use __PENDING_NOT_TRANSLATED__']
+  ];
+  const wsSum=XLSX.utils.aoa_to_sheet(summary);
+  wsSum['!cols']=[{wch:28},{wch:45}];
+  XLSX.utils.book_append_sheet(wbOut,wsSum,'QA Summary');
+
+  if(qaRows.length){
+    const issueData=[['Excel Row','Status','Hard QA Flags','Soft QA Flags','Source','LLM Raw','Post-Processed','Note'],...qaRows.map(x=>[x.row,x.status,x.hard,x.soft,x.source,x.raw,x.target,x.note])];
+    const wsQa=XLSX.utils.aoa_to_sheet(issueData);
+    wsQa['!cols']=[{wch:10},{wch:12},{wch:34},{wch:28},{wch:48},{wch:42},{wch:42},{wch:30}];
+    XLSX.utils.book_append_sheet(wbOut,wsQa,'QA Issues');
+  }
+  wbOut.Props={Title:'AI Game Localization Tool v8.5.7 export',Subject:sourceLang+' to '+currentLang,Comments:'v8.5.7 Prompt-driven + hard QA gate + run cost + retry estimate'};
+  XLSX.writeFile(wbOut,'localization_'+sourceLang+'_to_'+currentLang+'_'+Date.now()+'.xlsx');
 }
 
 
 /* ══════════════════════════════════════════
    GLOSSARY ↔ GITHUB REPO (glossary.json)
 ══════════════════════════════════════════ */
-const GH_OWNER='MagicalGnome721',GH_REPO='weapon-naming-tool',GH_BRANCH='main',GH_GFILE='glossary.json';
+const GH_OWNER='MagicalGnome721',GH_REPO='AI-game-localization-tool',GH_BRANCH='main',GH_GFILE='glossary.json';
 const GH_RAW=`https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${GH_BRANCH}/${GH_GFILE}`;
 const GH_API=`https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${GH_GFILE}`;
 
@@ -3714,9 +4565,10 @@ async function pushGloss(){
 const _t=localStorage.getItem('gh_tok');
 if(_t){const el=document.getElementById('gh-token');if(el)el.value=_t;}
 setLang('vi');
+updateSourceModeUI();
 // Clean boot: file HTML gốc có thể còn DOM demo 22 dòng; xóa UI demo để tránh hiểu nhầm là đang cache/stuck.
 (function bootCleanUI(){
-  rows=[]; tablePage=0; currentFilename=''; apiCallCount=0; savedTok=0; totalTok=0; ppCount=0; tmHitCount=0; abortFlag=false;
+  rows=[]; tablePage=0; tableFilter='all'; currentFilename=''; apiCallCount=0; savedTok=0; totalTok=0; ppCount=0; tmHitCount=0; abortFlag=false;
   try{setWorkerPanelVisible(false);}catch(_){}
   const tbody=document.getElementById('tbody');
   if(tbody)tbody.innerHTML='<tr><td colspan="7" class="empty">Chưa có file — hãy import Excel/CSV để bắt đầu.</td></tr>';
